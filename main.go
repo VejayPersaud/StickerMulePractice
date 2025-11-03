@@ -3,8 +3,11 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
@@ -26,7 +29,8 @@ func getStoreInfo(w http.ResponseWriter, r *http.Request) {
 
 	//Query Postgress
 	var name string
-	var revenue, totalOrders int
+	var revenue float64
+	var totalOrders int
 	var active bool
 
 	query := "SELECT name, revenue, total_orders, active FROM stores WHERE id = $1"
@@ -45,7 +49,7 @@ func getStoreInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := fmt.Sprintf(
-		`{"store_id": "%s", "name": "%s", "revenue": %d, "total_orders": %d, "active": %t}`,
+		`{"store_id": "%s", "name": "%s", "revenue": %.2f, "total_orders": %d, "active": %t}`,
 		storeID, name, revenue, totalOrders, active,
 	)
 
@@ -58,7 +62,18 @@ func main() {
 
 	// Connect to Postgres
 	fmt.Println("Connecting to Postgres...")
-	connStr := "host=localhost port=5432 user=postgres password=postgres dbname=sticker_mule_practice sslmode=disable"
+	// Load environment variables from .env file
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		log.Fatal("DATABASE_URL not set in .env file")
+	}
+
+	fmt.Println("Connecting to database...")
 
 	//sql.Open generates the expensive connection from the connStr info and an error which will be nil if everything connects
 	db, err = sql.Open("postgres", connStr)
