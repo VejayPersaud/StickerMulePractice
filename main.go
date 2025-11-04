@@ -6,20 +6,36 @@ import (
 	"log"
 	"net/http"
 	"os"
+	
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/handler"
+	
 )
 
 var db *sql.DB
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("/health called")
+	fmt.Println("Request Details: ")
+	fmt.Println("  - Method:", r.Method)
+	fmt.Println("  -Path:", r.URL.Path)
+	fmt.Println("  -From:", r.RemoteAddr)
+
+	fmt.Print("Sending response: OK"+" ... ")
 	w.Write([]byte("OK"))
+	fmt.Println("Response sent!\n")
+	
 }
 
 func getStoreInfo(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("/store called")
+	fmt.Println("Request Details: ")
+	fmt.Println("  - Method:", r.Method)
+	fmt.Println("  -Path:", r.URL.Path)
+	fmt.Println("  -From:", r.RemoteAddr)
 
 	storeID := r.URL.Query().Get("id")
 	if storeID == "" {
@@ -57,11 +73,86 @@ func getStoreInfo(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(response))
 }
 
+
+//Define the store type in GraphQL
+var storeType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "Store",
+	Fields: graphql.Fields{
+		"id": &graphql.Field{Type: graphql.Int,},
+		"name": &graphql.Field{Type: graphql.String,},
+		"revenue": &graphql.Field{Type: graphql.Float,},
+		"total_orders": &graphql.Field{Type: graphql.Int,},
+		"active": &graphql.Field{Type: graphql.Boolean,},
+
+	},
+})
+
+//Defines what queries are available
+var queryType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "Query",
+	Fields: graphql.Fields{
+		"store": &graphql.Field{
+			Type: storeType,
+			Args: graphql.FieldConfigArgument{
+				"id": &graphql.ArgumentConfig{
+					Type: graphql.Int,
+				},
+			},
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				//Extract ID from query
+				id, ok := p.Args["id"].(int)
+				if !ok {
+					return nil, fmt.Errorf("invalid id")
+				}
+
+				fmt.Printf("Graphql querying store with id = %d \n", id)
+
+				//Query database
+				var storeID int
+				var name string
+				var revenue float64
+				var totalOrders int
+				var active bool
+
+				query := "SELECT id, name, revenue, total_orders, active FROM stores WHERE id = $1"
+				err := db.QueryRow(query, id).Scan(&storeID, &name, &revenue, &totalOrders, &active)
+
+				if err == sql.ErrNoRows {
+					return nil, fmt.Errorf("Store not found")
+
+				}
+
+				if err != nil {
+					return nil, err
+				}
+
+				//Return as a map
+				return map[string]interface{}{
+					"id":           storeID,
+					"name":         name,
+					"revenue":      revenue,
+					"total_orders": totalOrders,
+					"active":       active,
+				}, nil
+			},
+		},
+	},
+})
+
+
+//Create the GraphQL schema
+var schema, _ = graphql.NewSchema(graphql.SchemaConfig{
+	Query: queryType,
+})
+
+
+
+
 func main() {
 	var err error
 
 	// Connect to Postgres
-	fmt.Println("Connecting to Postgres...")
+	fmt.Print("Connecting to Postgres...")
 	// Load environment variables from .env file
 	err = godotenv.Load()
 	if err != nil {
@@ -72,8 +163,6 @@ func main() {
 	if connStr == "" {
 		log.Fatal("DATABASE_URL not set in .env file")
 	}
-
-	fmt.Println("Connecting to database...")
 
 	//sql.Open generates the expensive connection from the connStr info and an error which will be nil if everything connects
 	db, err = sql.Open("postgres", connStr)
@@ -91,14 +180,25 @@ func main() {
 		fmt.Println("Cannot reach database:", err)
 		return
 	}
-	fmt.Println("Connected to Postgres!\n")
+	fmt.Println("Connected to Postgres!")
 
 	//Register endpoints
-	fmt.Println("Registering endpoints")
+	fmt.Print("Registering endpoints...")
 	http.HandleFunc("/health", healthCheck)
 	http.HandleFunc("/store", getStoreInfo)
+	
+	h := handler.New(&handler.Config{
+		Schema: &schema,
+		Pretty: true,
+		GraphiQL: true,
+	})
+	http.Handle("/graphql",h)
+
+	fmt.Println("Endpoints registered!")
+	
 
 	fmt.Println("Server listening on http://localhost:8080")
+	fmt.Println("GraphQL endpoint: http://localhost:8080/graphql")
 	fmt.Println("Waiting for requests...\n")
 	http.ListenAndServe(":8080", nil)
 }
