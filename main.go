@@ -46,12 +46,12 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 	err := h.database.QueryRow(query, storeID).Scan(&name, &revenue, &totalOrders, &active)
 
 	if err == sql.ErrNoRows {
-		fmt.Println("Store not found\n")
+		fmt.Println("Store not found")
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"error": "Store not found"}`))
 		return
 	} else if err != nil {
-		fmt.Println("Database error:", err, "\n")
+		fmt.Println("Database error:", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(`{"error": "Database error"}`))
 		return
@@ -62,7 +62,7 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 		storeID, name, revenue, totalOrders, active,
 	)
 
-	fmt.Println("Sending:", response, "\n")
+	fmt.Println("Sending:", response)
 	w.Write([]byte(response))
 
 
@@ -120,7 +120,7 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Print("Sending response: OK"+" ... ")
 	w.Write([]byte("OK"))
-	fmt.Println("Response sent!\n")
+	fmt.Println("Response sent!")
 	
 }
 
@@ -231,6 +231,6 @@ func main() {
 
 	fmt.Println("Server listening on http://localhost:8080")
 	fmt.Println("GraphQL endpoint: http://localhost:8080/graphql")
-	fmt.Println("Waiting for requests...\n")
+	fmt.Println("Waiting for requests...")
 	http.ListenAndServe(":8080", nil)
 }
