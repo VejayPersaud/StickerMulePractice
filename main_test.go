@@ -362,3 +362,60 @@ func TestCreateSchema_Success(t *testing.T) {
 		t.Error("Expected schema to have 'store' query field")
 	}
 }
+
+
+
+// _____________________________________ GraphQL CRUD ________________________________________
+
+func TestCreateStoreResolver_Success(t *testing.T){
+	//ARRANGE: Create mock database
+	fakeDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Failed to create mock: %v", err)
+	}
+	defer fakeDB.Close()
+
+	//ARRANGE: Expect INSERT query and return new ID
+	mock.ExpectQuery("INSERT INTO stores").
+	WithArgs("Brand New Store",25000.00,0,true).
+	WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(99))
+
+	//ARRANGE: Create handler and GraphQL params
+	handler := &Handler{database: fakeDB}
+	params := graphql.ResolveParams{
+		Args: map[string]interface{}{
+			"name": "Brand New Store",
+			"revenue": 25000.00,
+			"active": true,
+		},
+	}
+
+	//ACT: Call the resolver
+	result, err := handler.createStoreResolver(params)
+
+	//ASSERT: Check success
+	if err != nil {
+		t.Errorf("Expected no error, got: %v ", err)
+	}
+
+	//ASSERT: Check returned data 
+	storeMap, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected result to be map")
+	}
+
+	if storeMap["id"] != 99 {
+		t.Errorf("Expected id = 99, got %v", storeMap["id"])
+	}
+	if storeMap["name"] != "Brand New Store" {
+		t.Errorf("Expected name = 'Brand New Store', got %v", storeMap["name"])
+	}
+
+
+	//ASSERT: Verify mock was even called
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %v", err)
+	}
+
+
+}
