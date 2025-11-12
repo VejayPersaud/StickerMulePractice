@@ -111,6 +111,50 @@ func (h *Handler) storeResolver(p graphql.ResolveParams) (interface{}, error){
 }
 
 
+//createStoreResolver handles creating a new store
+func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, error) {
+	//Extract arguments
+	name, nameOk := p.Args["name"].(string)
+	revenue, revenueOk := p.Args["revenue"].(float64)
+	active, activeOk := p.Args["active"].(bool)
+
+	//Validate required fields
+	if !nameOk || !revenueOk {
+		return nil, fmt.Errorf("invalid arguments: name and revenue are required")
+	}
+
+	//Default active to true if not provided
+	if !activeOk {
+		active = true
+	}
+
+	fmt.Printf("GraphQL creating store: name=%s, revenue=%.2f, active=%t\n", name, revenue, active)
+
+	//Insert into database and return the new ID
+	var newID int
+	query := "INSERT INTO stores (name, revenue, total_orders, active) VALUES ($1, $2, $3, $4) RETURNING id"
+	err := h.database.QueryRow(query, name, revenue, 0, active).Scan(&newID)
+
+	if err != nil {
+		fmt.Println("Database error during insert:", err)
+		return nil, err
+	}
+
+	fmt.Printf("Successfully created store with ID=%d\n", newID)
+
+	//Return the created store
+	return map[string]interface{}{
+		"id":           newID,
+		"name":         name,
+		"revenue":      revenue,
+		"total_orders": 0,
+		"active":       active,
+	}, nil
+}
+
+
+
+
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("/health called")
 	fmt.Println("Request Details: ")
@@ -140,7 +184,7 @@ var storeType = graphql.NewObject(graphql.ObjectConfig{
 	},
 })
 
-// Function that creates the GraphQL schema with a Handler
+//Function that creates the GraphQL schema with a Handler
 func createSchema(h *Handler) (graphql.Schema, error) {
 	queryType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Query",
@@ -152,13 +196,38 @@ func createSchema(h *Handler) (graphql.Schema, error) {
 						Type: graphql.Int,
 					},
 				},
-				Resolve: h.storeResolver, // Use the Handler's method!
+				Resolve: h.storeResolver, //Use the Handler's method!
 			},
 		},
 	})
 
+	//Define mutations
+	mutationType := graphql.NewObject(graphql.ObjectConfig{
+		Name:"Mutation",
+		Fields: graphql.Fields{
+			"createStore": &graphql.Field{
+				Type: storeType,
+				Args: graphql.FieldConfigArgument{
+					"name": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"revenue": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.Float),
+					},
+					"active": &graphql.ArgumentConfig{
+						Type: graphql.Boolean,
+					},
+				},
+				Resolve: h.createStoreResolver,
+			},
+		},
+	})
+
+    
+
 	return graphql.NewSchema(graphql.SchemaConfig{
 		Query: queryType,
+		Mutation: mutationType,
 	})
 }
 
