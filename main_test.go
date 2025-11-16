@@ -367,6 +367,9 @@ func TestCreateSchema_Success(t *testing.T) {
 
 // _____________________________________ GraphQL CRUD ________________________________________
 
+
+
+//CREATE
 func TestCreateStoreResolver_Success(t *testing.T){
 	//ARRANGE: Create mock database
 	fakeDB, mock, err := sqlmock.New()
@@ -416,6 +419,17 @@ func TestCreateStoreResolver_Success(t *testing.T){
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("Unfulfilled expectations: %v", err)
 	}
+
+
+}
+
+
+
+
+//Update
+func TestUpdateStoreResolver_Success(t *testing.T){
+	//ARRANGE: Create mock database
+	fakeDB, mock, err := sqlmock.New()
 
 
 }
