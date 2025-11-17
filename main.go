@@ -153,7 +153,73 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 }
 
 
-func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, error)
+func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, error){
+	//Extract and Validate id
+	id, idOk := p.Args["id"].(int)
+	if !idOk {
+		return nil, fmt.Errorf("invalid id")
+	}
+
+	//Extract optional fields
+	name, _ := p.Args["name"].(string)
+	revenue, _ := p.Args["revenue"].(float64)
+	totalOrders, _ := p.Args["total_orders"].(int)
+	active, _ := p.Args["active"].(bool)
+
+	fmt.Printf("GraphQL updating store: id=%d\n", id)
+
+
+	//Update the database
+	query := "UPDATE stores SET name = $1, revenue = $2, total_orders = $3, active = $4 WHERE id = $5"
+	result, err := h.database.Exec(query, name, revenue, totalOrders, active, id)
+
+	if err != nil {
+		fmt.Println("Database error during update:", err)
+		return nil, err
+	}
+
+
+	// Check if any rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if rowsAffected == 0 {
+		return nil, fmt.Errorf("store with id %d not found", id)
+	}
+
+	fmt.Printf("Successfully updated store with ID=%d\n", id)
+
+
+	//Fetch and return updated store
+	var storeID int
+	var storeName string
+	var storeRevenue float64
+	var storeTotalOrders int
+	var storeActive bool
+
+
+	selectQuery := "SELECT id, name, revenue, total_orders, active FROM stores WHERE id = $1"
+	err = h.database.QueryRow(selectQuery, id).Scan(&storeID, &storeName, &storeRevenue, &storeTotalOrders, &storeActive)
+
+
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"id":           storeID,
+		"name":         storeName,
+		"revenue":      storeRevenue,
+		"total_orders": storeTotalOrders,
+		"active":       storeActive,
+	}, nil
+
+
+
+
+
+}
 
 
 

@@ -465,7 +465,7 @@ func TestUpdateStoreResolver_Success(t *testing.T){
 
 	//ASSERT: Check success
 	if err != nil {
-		t.Errorf("Expected no error, got v%", err)
+		t.Errorf("Expected no error, got %v", err)
 	}
 
 	//ASSERT: Check returned data
