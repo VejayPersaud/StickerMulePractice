@@ -430,6 +430,66 @@ func TestCreateStoreResolver_Success(t *testing.T){
 func TestUpdateStoreResolver_Success(t *testing.T){
 	//ARRANGE: Create mock database
 	fakeDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Failed to create mock: %v", err)
+	}
+	defer fakeDB.Close()
 
+	//ARRANGE: Expected UPDATE query
+	mock.ExpectExec("UPDATE stores SET (.+) WHERE id = \\$").
+	WithArgs("Updated Store", 75000.00, 500, false, 1).
+	WillReturnResult(sqlmock.NewResult(0,1))
+
+	//ARRANGE: Expect SELECT query to return updated data
+	rows := sqlmock.NewRows([]string{"id","name","revenue","total_orders","active"}).
+	AddRow(1,"Updated Store", 75000.00, 500, false)
+
+	mock.ExpectQuery("SELECT id, name, revenue, total_orders, active FROM stores WHERE id = \\$1").
+	WithArgs(1).
+	WillReturnRows(rows)
+
+	//ARRANGE: Create Handler and GraphQL params
+	handler := &Handler{database: fakeDB}
+	params := graphql.ResolveParams{
+		Args: map[string]interface{}{
+			"id":		1,
+			"name":		"Updated Store",
+			"revenue":		75000.00,
+			"total_orders":		500,
+			"active":		false,
+		},
+	}
+
+	//ACT: Call the resolver
+	result, err := handler.updateStoreResolver(params)
+
+	//ASSERT: Check success
+	if err != nil {
+		t.Errorf("Expected no error, got v%", err)
+	}
+
+	//ASSERT: Check returned data
+	storeMap, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected result to be a map")
+	}
+
+	if storeMap["id"] != 1 {
+		t.Errorf("Expected id=1, got %v", storeMap["id"])
+	}
+	if storeMap["name"] != "Updated Store" {
+		t.Errorf("Expected name='Updated Store', got %v", storeMap["name"])
+	}
+	if storeMap["revenue"] != 75000.00 {
+		t.Errorf("Expected revenue=75000.00, got %v", storeMap["revenue"])
+	}
+
+	//ASSERT: Check mock expectations
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %v",err)
+	}
+
+
+ 
 
 }

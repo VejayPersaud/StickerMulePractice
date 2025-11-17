@@ -153,6 +153,9 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 }
 
 
+func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, error)
+
+
 
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
