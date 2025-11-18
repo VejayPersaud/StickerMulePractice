@@ -493,3 +493,91 @@ func TestUpdateStoreResolver_Success(t *testing.T){
  
 
 }
+
+
+//Delete
+func TestDeleteStoreResolver_Success(t *testing.T) {
+	//ARRANGE: Create mock database
+	fakeDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Failed to create mock: %v", err)
+	}
+	defer fakeDB.Close()
+
+	//ARRANGE: Expect DELETE query
+	mock.ExpectExec("DELETE FROM stores WHERE id = \\$1").
+		WithArgs(99).
+		WillReturnResult(sqlmock.NewResult(0, 1)) // 1 row affected
+
+	//ARRANGE: Create Handler and GraphQL params
+	handler := &Handler{database: fakeDB}
+	params := graphql.ResolveParams{
+		Args: map[string]interface{}{
+			"id": 99,
+		},
+	}
+
+	//ACT: Call the resolver
+	result, err := handler.deleteStoreResolver(params)
+
+	//ASSERT: Check success
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	//ASSERT: Check result
+	resultMap, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected result to be a map")
+	}
+
+	if resultMap["success"] != true {
+		t.Errorf("Expected success=true, got %v", resultMap["success"])
+	}
+	if resultMap["id"] != 99 {
+		t.Errorf("Expected id=99, got %v", resultMap["id"])
+	}
+
+	//ASSERT: Verify mock expectations
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDeleteStoreResolver_NotFound(t *testing.T) {
+	//ARRANGE: Create mock database
+	fakeDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Failed to create mock: %v", err)
+	}
+	defer fakeDB.Close()
+
+	//ARRANGE: Expect DELETE query with 0 rows affected
+	mock.ExpectExec("DELETE FROM stores WHERE id = \\$1").
+		WithArgs(999).
+		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
+
+	//ARRANGE: Create Handler and GraphQL params
+	handler := &Handler{database: fakeDB}
+	params := graphql.ResolveParams{
+		Args: map[string]interface{}{
+			"id": 999,
+		},
+	}
+
+	//ACT: Call the resolver
+	result, err := handler.deleteStoreResolver(params)
+
+	//ASSERT: Should return error
+	if err == nil {
+		t.Error("Expected error for store not found, got nil")
+	}
+	if result != nil {
+		t.Errorf("Expected nil result, got %v", result)
+	}
+
+	//ASSERT: Verify mock expectations
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %v", err)
+	}
+}

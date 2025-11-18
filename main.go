@@ -253,6 +253,7 @@ var storeType = graphql.NewObject(graphql.ObjectConfig{
 	},
 })
 
+
 //Function that creates the GraphQL schema with a Handler
 func createSchema(h *Handler) (graphql.Schema, error) {
 	queryType := graphql.NewObject(graphql.ObjectConfig{
@@ -272,7 +273,7 @@ func createSchema(h *Handler) (graphql.Schema, error) {
 
 	//Define mutations
 	mutationType := graphql.NewObject(graphql.ObjectConfig{
-		Name:"Mutation",
+		Name: "Mutation",
 		Fields: graphql.Fields{
 			"createStore": &graphql.Field{
 				Type: storeType,
@@ -289,13 +290,32 @@ func createSchema(h *Handler) (graphql.Schema, error) {
 				},
 				Resolve: h.createStoreResolver,
 			},
+			"updateStore": &graphql.Field{
+				Type: storeType,
+				Args: graphql.FieldConfigArgument{
+					"id": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.Int),
+					},
+					"name": &graphql.ArgumentConfig{
+						Type: graphql.String,
+					},
+					"revenue": &graphql.ArgumentConfig{
+						Type: graphql.Float,
+					},
+					"total_orders": &graphql.ArgumentConfig{
+						Type: graphql.Int,
+					},
+					"active": &graphql.ArgumentConfig{
+						Type: graphql.Boolean,
+					},
+				},
+				Resolve: h.updateStoreResolver,  
+			},  
 		},
 	})
 
-    
-
 	return graphql.NewSchema(graphql.SchemaConfig{
-		Query: queryType,
+		Query:    queryType,
 		Mutation: mutationType,
 	})
 }
