@@ -152,7 +152,7 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 	}, nil
 }
 
-
+//edits a existing store
 func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, error){
 	//Extract and Validate id
 	id, idOk := p.Args["id"].(int)
@@ -221,7 +221,42 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 
 }
 
+//deleteStoreResolver handles deleting a store
+func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, error) {
+	//Extract and validate ID
+	id, idOk := p.Args["id"].(int)
+	if !idOk {
+		return nil, fmt.Errorf("invalid id")
+	}
 
+	fmt.Printf("GraphQL deleting store: id=%d\n", id)
+
+	//Delete from database
+	query := "DELETE FROM stores WHERE id = $1"
+	result, err := h.database.Exec(query, id)
+
+	if err != nil {
+		fmt.Println("Database error during delete:", err)
+		return nil, err
+	}
+
+	//Check if any rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if rowsAffected == 0 {
+		return nil, fmt.Errorf("store with id %d not found", id)
+	}
+
+	fmt.Printf("Successfully deleted store with ID=%d\n", id)
+
+	//Return success response
+	return map[string]interface{}{
+		"success": true,
+		"id":      id,
+	}, nil
+}
 
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
@@ -250,6 +285,15 @@ var storeType = graphql.NewObject(graphql.ObjectConfig{
 		"total_orders": &graphql.Field{Type: graphql.Int,},
 		"active": &graphql.Field{Type: graphql.Boolean,},
 
+	},
+})
+
+//Define the delete result type in GraphQL
+var deleteResultType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "DeleteResult",
+	Fields: graphql.Fields{
+		"success": &graphql.Field{Type: graphql.Boolean},
+		"id":      &graphql.Field{Type: graphql.Int},
 	},
 })
 
@@ -310,7 +354,16 @@ func createSchema(h *Handler) (graphql.Schema, error) {
 					},
 				},
 				Resolve: h.updateStoreResolver,  
-			},  
+			}, 
+			"deleteStore": &graphql.Field{
+				Type: deleteResultType,
+				Args: graphql.FieldConfigArgument{
+					"id": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.Int),
+					},
+				},
+				Resolve: h.deleteStoreResolver,
+			}, 
 		},
 	})
 
