@@ -82,15 +82,19 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 
 }
 
-//Method that returns a GraphQL resolver function
+//Method that returns a GraphQL resolver function (READ)
 func (h *Handler) storeResolver(p graphql.ResolveParams) (interface{}, error){
 	//Extract ID from query
 	id, ok := p.Args["id"].(int)
 	if !ok {
+		h.logger.Error("invalid store id argument")
 		return nil, fmt.Errorf("invalid id")
 	}
 
-	fmt.Printf("GraphQL querying store with id = %d \n", id)
+	h.logger.Info("graphql store query",
+		"store_id", id,
+	)
+
 
 	//Query database - using h.database instead of global db
 	var storeID int
@@ -103,12 +107,25 @@ func (h *Handler) storeResolver(p graphql.ResolveParams) (interface{}, error){
 	err := h.database.QueryRow(query, id).Scan(&storeID, &name, &revenue, &totalOrders, &active)
 
 	if err == sql.ErrNoRows {
+		h.logger.Warn("store not found",
+			"store_id", id,
+		)
 		return nil, fmt.Errorf("Store not found")
 	}
 
 	if err != nil {
+		h.logger.Error("database error during query",
+			"store_id", id,
+			"error", err.Error(),
+		)
 		return nil, err
 	}
+
+	h.logger.Info("graphql store query successful",
+		"store_id", id,
+		"name", name,
+	)
+	
 
 	//Return as a map
 	return map[string]interface{}{
@@ -124,7 +141,7 @@ func (h *Handler) storeResolver(p graphql.ResolveParams) (interface{}, error){
 }
 
 
-//createStoreResolver handles creating a new store
+//createStoreResolver handles creating a new store (CREATE)
 func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, error) {
 	//Extract arguments
 	name, nameOk := p.Args["name"].(string)
