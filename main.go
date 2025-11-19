@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	
@@ -20,6 +21,7 @@ var db *sql.DB
 //Handler is a struct that holds dependencies
 type Handler struct {
 	database *sql.DB
+	logger *slog.Logger
 }
 
 //Method on Handler, can create test Handler with mock db
@@ -259,17 +261,16 @@ func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, err
 }
 
 
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("/health called")
-	fmt.Println("Request Details: ")
-	fmt.Println("  - Method:", r.Method)
-	fmt.Println("  -Path:", r.URL.Path)
-	fmt.Println("  -From:", r.RemoteAddr)
+func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {
+	h.logger.Info("health check endpoint called",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
 
-	fmt.Print("Sending response: OK"+" ... ")
 	w.Write([]byte("OK"))
-	fmt.Println("Response sent!")
-	
+
+	h.logger.Info("health check response sent")
 }
 
 
@@ -412,10 +413,18 @@ func main() {
 
 	//Register endpoints
 	fmt.Print("Registering endpoints...")
-	http.HandleFunc("/health", healthCheck)
 
+	//Structure JSON logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
 
-	storeHandler := &Handler{database: db}
+	storeHandler := &Handler{
+		database:		db,
+		logger:		logger,		
+	}
+
+	http.HandleFunc("/health", storeHandler.healthCheck)
 	http.HandleFunc("/store", storeHandler.getStoreInfo)
 
 
