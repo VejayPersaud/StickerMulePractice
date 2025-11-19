@@ -26,17 +26,19 @@ type Handler struct {
 
 //Method on Handler, can create test Handler with mock db
 func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("/store called")
-	fmt.Println("Request Details: ")
-	fmt.Println("  - Method:", r.Method)
-	fmt.Println("  -Path:", r.URL.Path)
-	fmt.Println("  -From:", r.RemoteAddr)
 
 	storeID := r.URL.Query().Get("id")
 	if storeID == "" {
 		storeID = "1"
 	}
-	fmt.Println("Looking up store ID in database:", storeID)
+	
+	h.logger.Info("store endpoint called",
+		"store_id", storeID,
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
+
 
 	//Query Postgres
 	var name string
@@ -48,12 +50,17 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 	err := h.database.QueryRow(query, storeID).Scan(&name, &revenue, &totalOrders, &active)
 
 	if err == sql.ErrNoRows {
-		fmt.Println("Store not found")
+		h.logger.Warn("store not found",
+			"store_id", storeID,
+		)
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"error": "Store not found"}`))
 		return
 	} else if err != nil {
-		fmt.Println("Database error:", err)
+		h.logger.Error("database error",
+			"store_id", storeID,
+			"error", err.Error(),
+		)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(`{"error": "Database error"}`))
 		return
@@ -64,7 +71,11 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 		storeID, name, revenue, totalOrders, active,
 	)
 
-	fmt.Println("Sending:", response)
+	h.logger.Info("store query successful",
+		"store_id", storeID,
+		"name", name,
+		"revenue", revenue,
+	)
 	w.Write([]byte(response))
 
 
