@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"os"
+	"context"
 	
 
 	"github.com/joho/godotenv"
@@ -18,11 +20,70 @@ import (
 
 var db *sql.DB
 
+
+
+
+
+
 //Handler is a struct that holds dependencies
 type Handler struct {
 	database *sql.DB
 	logger *slog.Logger
 }
+
+
+//__________________________________________________________________LOGGING__________________________________________________________________
+
+//shouldSampleLog determines if we should log based on sampling rate
+//Always logs errors/warnings, samples INFO logs
+func shouldSampleLog(level slog.Level, samplingRate float64) bool {
+	//Always log errors and warnings (100%)
+	if level >= slog.LevelWarn {
+		return true
+	}
+	
+	//Sample INFO logs based on rate (5% = 0.05)
+	//Simple hash-based sampling for consistent behavior
+	return rand.Float64() < samplingRate
+}
+
+
+//SamplingHandler wraps slog.Handler to implement sampling
+type SamplingHandler struct {
+	handler      slog.Handler
+	samplingRate float64
+}
+
+func (h *SamplingHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return shouldSampleLog(level, h.samplingRate)
+}
+
+func (h *SamplingHandler) Handle(ctx context.Context, record slog.Record) error {
+	if shouldSampleLog(record.Level, h.samplingRate) {
+		return h.handler.Handle(ctx, record)
+	}
+	return nil
+}
+
+func (h *SamplingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &SamplingHandler{
+		handler:      h.handler.WithAttrs(attrs),
+		samplingRate: h.samplingRate,
+	}
+}
+
+func (h *SamplingHandler) WithGroup(name string) slog.Handler {
+	return &SamplingHandler{
+		handler:      h.handler.WithGroup(name),
+		samplingRate: h.samplingRate,
+	}
+}
+
+
+
+
+
+//__________________________________________________________________END-LOGGING__________________________________________________________________
 
 //Method on Handler, can create test Handler with mock db
 func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
@@ -475,10 +536,21 @@ func main() {
 	//Register endpoints
 	fmt.Print("Registering endpoints...")
 
-	//Structure JSON logger
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	//Create base JSON handler
+	baseHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})
+
+	//Wrap with sampling (5% of INFO logs, 100% of WARN/ERROR)
+	samplingHandler := &SamplingHandler{
+		handler:      baseHandler,
+		samplingRate: 0.05, //5% sampling for INFO logs
+	}
+
+	logger := slog.New(samplingHandler)
+	logger.Info("logging initialized with 5% sampling for INFO level")
+
+
 
 	storeHandler := &Handler{
 		database:		db,

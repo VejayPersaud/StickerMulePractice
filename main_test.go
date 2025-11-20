@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"fmt"
+	"io"          
+	"log/slog"
 	"database/sql"
 
 	"github.com/graphql-go/graphql"
@@ -19,23 +21,23 @@ import (
 )
 
 func TestHealthCheck(t *testing.T) {
-
-	fmt.Println("DEBUGDEBUG NOW RUNNING TESTHEALTHCHECK")
-
-	//t.Error("something failed"),marks test as failed
-    //t.Fatal("critical failure"),stops test immediately 
-
+	//ARRANGE: Create a test logger (discard output)
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	
+	//ARRANGE: Create Handler with logger
+	handler := &Handler{
+		database: nil, // Health check doesn't use DB
+		logger:   logger,
+	}
+	
 	//ARRANGE: Create a fake HTTP request
-
-	//Creates a fake HTTP request,no real network call
 	req := httptest.NewRequest("GET", "/health", nil)
 	
-	//ARRANGE: Create a fake HTTP response recorder to capture what gets written
-	//can check w.Code, w.Body, w.Header later
+	//ARRANGE: Create a fake HTTP response recorder
 	w := httptest.NewRecorder()
 	
-	//ACT: Call the function we're testing with the fake request/response
-	healthCheck(w, req)
+	//ACT: Call the method
+	handler.healthCheck(w, req)
 	
 	//ASSERT: Check the response
 	if w.Code != http.StatusOK {
@@ -46,10 +48,6 @@ func TestHealthCheck(t *testing.T) {
 	if body != "OK" {
 		t.Errorf("Expected body 'OK', got '%s'", body)
 	}
-
-	fmt.Println("DEBUGDEBUG END OF TESTHEALTHCHECK")
-
-
 }
 
 
@@ -71,7 +69,11 @@ func TestGetStoreInfo_Success(t *testing.T) {
 		WillReturnRows(rows)
 
 	//ARRANGE: Create Handler with mock database
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
 
 	//ARRANGE: Create fake HTTP request
 	req := httptest.NewRequest("GET", "/store?id=1", nil)
@@ -111,7 +113,15 @@ func TestGetStoreInfo_NotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)  // Simulate store not found
 
 	//ARRANGE: Create Handler and request
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
+
+
 	req := httptest.NewRequest("GET", "/store?id=999", nil)
 	w := httptest.NewRecorder()
 
@@ -150,7 +160,14 @@ func TestGetStoreInfo_DatabaseError(t *testing.T) {
 		WillReturnError(fmt.Errorf("connection timeout"))  // Simulate DB failure
 
 	//ARRANGE: Create Handler and request
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
+
 	req := httptest.NewRequest("GET", "/store?id=1", nil)
 	w := httptest.NewRecorder()
 
@@ -191,7 +208,14 @@ func TestStoreResolver_Success(t *testing.T) {
 		WillReturnRows(rows)
 
 	//ARRANGE: Create Handler and GraphQL params
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
+
 	params := graphql.ResolveParams{
 		Args: map[string]interface{}{
 			"id": 1,
@@ -243,7 +267,14 @@ func TestStoreResolver_NotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	//ARRANGE: Create Handler and params
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
+
 	params := graphql.ResolveParams{
 		Args: map[string]interface{}{
 			"id": 999,
@@ -269,7 +300,11 @@ func TestStoreResolver_NotFound(t *testing.T) {
 
 func TestStoreResolver_InvalidID(t *testing.T) {
 	//ARRANGE: Create Handler (no DB needed for this test)
-	handler := &Handler{database: nil}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: nil,  //No database needed, test fails before DB access
+		logger:   logger,
+	}
 	
 	//ARRANGE: Create params with invalid ID (string instead of int)
 	params := graphql.ResolveParams{
@@ -310,7 +345,15 @@ func TestGetStoreInfo_DefaultID(t *testing.T) {
 		WillReturnRows(rows)
 
 	//ARRANGE: Create Handler and request WITH NO ID PARAMETER
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
+
+
 	req := httptest.NewRequest("GET", "/store", nil)  // No ?id=X
 	w := httptest.NewRecorder()
 
@@ -341,7 +384,11 @@ func TestCreateSchema_Success(t *testing.T) {
 	}
 	defer fakeDB.Close()
 	
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
 
 	//ACT: Create the schema
 	schema, err := createSchema(handler)
@@ -384,7 +431,14 @@ func TestCreateStoreResolver_Success(t *testing.T){
 	WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(99))
 
 	//ARRANGE: Create handler and GraphQL params
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
+
 	params := graphql.ResolveParams{
 		Args: map[string]interface{}{
 			"name": "Brand New Store",
@@ -449,7 +503,14 @@ func TestUpdateStoreResolver_Success(t *testing.T){
 	WillReturnRows(rows)
 
 	//ARRANGE: Create Handler and GraphQL params
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
+
 	params := graphql.ResolveParams{
 		Args: map[string]interface{}{
 			"id":		1,
@@ -510,7 +571,13 @@ func TestDeleteStoreResolver_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1)) // 1 row affected
 
 	//ARRANGE: Create Handler and GraphQL params
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
 	params := graphql.ResolveParams{
 		Args: map[string]interface{}{
 			"id": 99,
@@ -558,7 +625,13 @@ func TestDeleteStoreResolver_NotFound(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
 
 	//ARRANGE: Create Handler and GraphQL params
-	handler := &Handler{database: fakeDB}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	handler := &Handler{
+		database: fakeDB,
+		logger:   logger,
+	}
+
+
 	params := graphql.ResolveParams{
 		Args: map[string]interface{}{
 			"id": 999,
