@@ -150,6 +150,7 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 
 	//Validate required fields
 	if !nameOk || !revenueOk {
+		h.logger.Error("invalid arguments for createStore")
 		return nil, fmt.Errorf("invalid arguments: name and revenue are required")
 	}
 
@@ -158,7 +159,11 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 		active = true
 	}
 
-	fmt.Printf("GraphQL creating store: name=%s, revenue=%.2f, active=%t\n", name, revenue, active)
+	h.logger.Info("creating new store",
+		"name", name,
+		"revenue", revenue,
+		"active", active,
+	)
 
 	//Insert into database and return the new ID
 	var newID int
@@ -166,11 +171,17 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 	err := h.database.QueryRow(query, name, revenue, 0, active).Scan(&newID)
 
 	if err != nil {
-		fmt.Println("Database error during insert:", err)
+		h.logger.Error("database error during insert",
+			"name", name,
+			"error", err.Error(),
+		)
 		return nil, err
 	}
 
-	fmt.Printf("Successfully created store with ID=%d\n", newID)
+	h.logger.Info("store created successfully",
+		"store_id", newID,
+		"name", name,
+	)
 
 	//Return the created store
 	return map[string]interface{}{
@@ -182,11 +193,12 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 	}, nil
 }
 
-//edits a existing store
+//edits a existing store (UPDATE)
 func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, error){
 	//Extract and Validate id
 	id, idOk := p.Args["id"].(int)
 	if !idOk {
+		h.logger.Error("invalid id for updateStore")
 		return nil, fmt.Errorf("invalid id")
 	}
 
@@ -196,7 +208,9 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 	totalOrders, _ := p.Args["total_orders"].(int)
 	active, _ := p.Args["active"].(bool)
 
-	fmt.Printf("GraphQL updating store: id=%d\n", id)
+	h.logger.Info("updating store",
+		"store_id", id,
+	)
 
 
 	//Update the database
@@ -204,21 +218,29 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 	result, err := h.database.Exec(query, name, revenue, totalOrders, active, id)
 
 	if err != nil {
-		fmt.Println("Database error during update:", err)
+		h.logger.Error("database error during update",
+			"store_id", id,
+			"error", err.Error(),
+		)
 		return nil, err
 	}
 
 
-	// Check if any rows were affected
+	//Check if any rows were affected
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return nil, err
 	}
 	if rowsAffected == 0 {
+		h.logger.Warn("store not found for update",
+			"store_id", id,
+		)
 		return nil, fmt.Errorf("store with id %d not found", id)
 	}
 
-	fmt.Printf("Successfully updated store with ID=%d\n", id)
+	h.logger.Info("store updated successfully",
+		"store_id", id,
+	)
 
 
 	//Fetch and return updated store
@@ -251,22 +273,28 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 
 }
 
-//deleteStoreResolver handles deleting a store
+//deleteStoreResolver handles deleting a store (DELETE)
 func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, error) {
 	//Extract and validate ID
 	id, idOk := p.Args["id"].(int)
 	if !idOk {
+		h.logger.Error("invalid id for deleteStore")
 		return nil, fmt.Errorf("invalid id")
 	}
 
-	fmt.Printf("GraphQL deleting store: id=%d\n", id)
+	h.logger.Info("deleting store",
+		"store_id", id,
+	)
 
 	//Delete from database
 	query := "DELETE FROM stores WHERE id = $1"
 	result, err := h.database.Exec(query, id)
 
 	if err != nil {
-		fmt.Println("Database error during delete:", err)
+		h.logger.Error("database error during delete",
+			"store_id", id,
+			"error", err.Error(),
+		)
 		return nil, err
 	}
 
@@ -276,10 +304,15 @@ func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, err
 		return nil, err
 	}
 	if rowsAffected == 0 {
+		h.logger.Warn("store not found for delete",
+			"store_id", id,
+		)
 		return nil, fmt.Errorf("store with id %d not found", id)
 	}
 
-	fmt.Printf("Successfully deleted store with ID=%d\n", id)
+	h.logger.Info("store deleted successfully",
+		"store_id", id,
+	)
 
 	//Return success response
 	return map[string]interface{}{
