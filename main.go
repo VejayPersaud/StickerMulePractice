@@ -15,10 +15,23 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	
 )
 
 var db *sql.DB
+
+var (
+	//httpRequestsTotal counts all HTTP requests
+	httpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "Total number of HTTP requests",
+		},
+		[]string{"method", "path", "status"},
+	)
+)
 
 
 
@@ -392,6 +405,9 @@ func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {
 
 	w.Write([]byte("OK"))
 
+	//Increment Prometheus counter
+	httpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, "200").Inc()
+
 	h.logger.Info("health check response sent")
 }
 
@@ -502,6 +518,11 @@ func createSchema(h *Handler) (graphql.Schema, error) {
 func main() {
 	var err error
 
+	//Register Prometheus metrics
+	prometheus.MustRegister(httpRequestsTotal)
+	fmt.Println("Prometheus metrics registered")
+
+
 	// Connect to Postgres
 	fmt.Print("Connecting to Postgres...")
 	// Load environment variables from .env file
@@ -544,7 +565,7 @@ func main() {
 	//Wrap with sampling (5% of INFO logs, 100% of WARN/ERROR)
 	samplingHandler := &SamplingHandler{
 		handler:      baseHandler,
-		samplingRate: 0.05, //5% sampling for INFO logs
+		samplingRate: 1.0, //5% sampling for INFO logs 0.05, changed to 1.0 for testing
 	}
 
 	logger := slog.New(samplingHandler)
@@ -559,7 +580,7 @@ func main() {
 
 	http.HandleFunc("/health", storeHandler.healthCheck)
 	http.HandleFunc("/store", storeHandler.getStoreInfo)
-
+	http.Handle("/metrics", promhttp.Handler())
 
 	//Create the schema using our Handler
 	schema, err := createSchema(storeHandler)
