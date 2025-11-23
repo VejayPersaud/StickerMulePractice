@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"context"
+	"time"
 	
 
 	"github.com/joho/godotenv"
@@ -31,6 +32,16 @@ var (
 		},
 		[]string{"method", "path", "status"},
 	)
+
+	//httpRequestDuration tracks request latency distribution
+	httpRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "HTTP request duration in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "path"},
+	)
 )
 
 
@@ -43,6 +54,52 @@ type Handler struct {
 	database *sql.DB
 	logger *slog.Logger
 }
+
+
+//responseWriter wraps http.ResponseWriter to capture status code
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+//prometheusMiddleware wraps handlers to automatically record metrics
+func prometheusMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		//Start timer
+		start := time.Now()
+		
+		//Wrap the ResponseWriter to capture status code
+		wrappedWriter := &responseWriter{
+			ResponseWriter: w,
+			statusCode:     200,
+		}
+
+		//Call the actual handler
+		next.ServeHTTP(wrappedWriter, r)
+
+		//Calculate duration
+		duration := time.Since(start).Seconds()
+
+		//Record counter metric
+		httpRequestsTotal.WithLabelValues(
+			r.Method,
+			r.URL.Path,
+			fmt.Sprintf("%d", wrappedWriter.statusCode),
+		).Inc()
+
+		//Record histogram metric
+		httpRequestDuration.WithLabelValues(
+			r.Method,
+			r.URL.Path,
+		).Observe(duration)
+	})
+}
+
 
 
 //__________________________________________________________________LOGGING__________________________________________________________________
@@ -405,9 +462,6 @@ func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {
 
 	w.Write([]byte("OK"))
 
-	//Increment Prometheus counter
-	httpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, "200").Inc()
-
 	h.logger.Info("health check response sent")
 }
 
@@ -519,13 +573,13 @@ func main() {
 	var err error
 
 	//Register Prometheus metrics
-	prometheus.MustRegister(httpRequestsTotal)
+	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration)
 	fmt.Println("Prometheus metrics registered")
 
 
-	// Connect to Postgres
+	//Connect to Postgres
 	fmt.Print("Connecting to Postgres...")
-	// Load environment variables from .env file
+	//Load environment variables from .env file
 	err = godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -565,7 +619,7 @@ func main() {
 	//Wrap with sampling (5% of INFO logs, 100% of WARN/ERROR)
 	samplingHandler := &SamplingHandler{
 		handler:      baseHandler,
-		samplingRate: 1.0, //5% sampling for INFO logs 0.05, changed to 1.0 for testing
+		samplingRate: 0.05, //5% sampling for INFO logs 0.05, changed to 1.0 for testing
 	}
 
 	logger := slog.New(samplingHandler)
@@ -578,8 +632,8 @@ func main() {
 		logger:		logger,		
 	}
 
-	http.HandleFunc("/health", storeHandler.healthCheck)
-	http.HandleFunc("/store", storeHandler.getStoreInfo)
+	http.Handle("/health", prometheusMiddleware(http.HandlerFunc(storeHandler.healthCheck)))
+	http.Handle("/store", prometheusMiddleware(http.HandlerFunc(storeHandler.getStoreInfo)))
 	http.Handle("/metrics", promhttp.Handler())
 
 	//Create the schema using our Handler
