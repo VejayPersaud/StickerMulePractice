@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s  #How often to scrape targets
+  evaluation_interval: 15s  #How often to evaluate rules
+
+scrape_configs:
+  - job_name: 'stickermule-app'
+    static_configs:
+      - targets: ['host.docker.internal:8080']  #Our Go app
