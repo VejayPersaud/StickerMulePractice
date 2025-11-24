@@ -1,3 +1,21 @@
+## CURRENT PROJECT STRUCTURE
+```
+StickerMulePractice/
+├── main.go                    (Handler struct, CRUD resolvers, Prometheus middleware)
+├── main_test.go               (13 test cases, all passing)
+├── go.mod
+├── go.sum
+├── docker-compose.yml         (Prometheus + Grafana stack)
+├── traffic-generator.sh       (Load testing script)
+├── observability/
+│   └── prometheus.yml         (Prometheus scrape config)
+├── .env                       (DATABASE_URL - not in Git)
+├── .gitignore
+├── README.md
+└── PROGRESS.md                
+```
+
+
 ### Testing
 
 
@@ -86,3 +104,20 @@ mutation {
 **Key Learning:** Middleware pattern enables instrumentation without touching business logic. Histograms reveal distribution patterns that averages hide.
 
 **Production Pattern:** Single middleware automatically instruments all endpoints - scalable and maintainable.
+
+
+
+### Observability Stack 
+- Set up Prometheus and Grafana in Docker using docker-compose
+- Configured Prometheus to scrape `/metrics` endpoint every 15s
+- Built comprehensive Grafana dashboard with RED method:
+  - **Rate:** `rate(http_requests_total[1m])` - requests per second by endpoint
+  - **Errors:** 4xx/5xx percentage tracking with regex filtering
+  - **Duration:** p50/p95/p99 latency percentiles using `histogram_quantile()`
+- Created traffic generator script for realistic load testing
+- Real time visualization of all metrics with historical data retention
+- Architecture: Pull based monitoring (Prometheus scrapes app, zero app dependencies)
+
+**Key Learning:** Histograms + `histogram_quantile()` enable percentile calculations. Pull model keeps app simple, monitoring infrastructure has zero impact on app reliability.
+
+**Production Insight:** Latency percentiles reveal distribution, /health at ~0.1ms vs /store at ~150ms (database overhead visible). p99 tracking catches worst case user experiences that averages hide.
