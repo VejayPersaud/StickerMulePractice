@@ -70,3 +70,19 @@ mutation {
   }
 }
 ```
+
+
+### Prometheus Metrics 
+- Implemented HTTP instrumentation with Counter and Histogram metrics
+- Automated middleware 
+- Metrics exposed at `/metrics` endpoint for Prometheus scraping
+- **RED Method Coverage:**
+  - Rate: `http_requests_total` (by method, path, status)
+  - Errors: Status code tracking (200, 404, 500, etc.)
+  - Duration: `http_request_duration_seconds` histogram with percentiles
+- Created `responseWriter` wrapper to capture response status codes
+- Performance insights: /health ~0.07ms, /store ~143ms (with database latency visible)
+
+**Key Learning:** Middleware pattern enables instrumentation without touching business logic. Histograms reveal distribution patterns that averages hide.
+
+**Production Pattern:** Single middleware automatically instruments all endpoints - scalable and maintainable.
