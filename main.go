@@ -579,10 +579,10 @@ func main() {
 
 	//Connect to Postgres
 	fmt.Print("Connecting to Postgres...")
-	//Load environment variables from .env file
+	//Load environment variables from .env file (optional in production)
 	err = godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Println("No .env file found, using environment variables") //Warn instead of crash
 	}
 
 	connStr := os.Getenv("DATABASE_URL")
