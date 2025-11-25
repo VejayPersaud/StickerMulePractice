@@ -649,6 +649,14 @@ func main() {
     	GraphiQL: true,
 	})
 	http.Handle("/graphql", graphqlHandler)
+	//Root endpoint
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte("StickerMule Portfolio API | Endpoints: /health, /store, /graphql, /metrics | CI/CD: Active"))
+	})
 
 
 
