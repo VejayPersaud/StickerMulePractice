@@ -121,3 +121,24 @@ mutation {
 **Key Learning:** Histograms + `histogram_quantile()` enable percentile calculations. Pull model keeps app simple, monitoring infrastructure has zero impact on app reliability.
 
 **Production Insight:** Latency percentiles reveal distribution, /health at ~0.1ms vs /store at ~150ms (database overhead visible). p99 tracking catches worst case user experiences that averages hide.
+
+
+### Observability Stack Extended + CI/CD 
+- Deployed app to GCP Cloud Run (serverless, auto-scaling)
+- Set up CI/CD with GitHub Actions (auto-deploy on push to main)
+- Deployed Prometheus + Grafana on GCP Compute Engine (e2-micro VM)
+- Configured Prometheus to scrape Cloud Run metrics via HTTPS
+- Rebuilt Grafana dashboard with RED method, made json congif file:
+  - **Rate:** `rate(http_requests_total[1m])` - requests per second by endpoint
+  - **Errors:** 4xx/5xx percentage tracking with regex filtering
+  - **Duration:** p50/p95/p99 latency percentiles using `histogram_quantile()`
+- Fixed traffic generator for live load testing
+
+**Key Learning:** Cloud Run (serverless) vs Compute Engine (VMs) - understanding when to use each. CI/CD eliminates machine-specific deployment issues. Pull based monitoring keeps app independent of observability infrastructure.
+
+**Production Insight:** Latency distribution visible, /health ~0.1ms vs /store ~150ms (database overhead). p99 tracking reveals worst-case user experience. Error rate fluctuates 0-30% with traffic patterns.
+
+**Live URLs:**
+- App: https://stickermule-app-386055911814.us-central1.run.app
+- Prometheus: http://35.239.84.255:9090
+- Grafana: http://35.239.84.255:3000
