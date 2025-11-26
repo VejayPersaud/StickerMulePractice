@@ -138,7 +138,23 @@ mutation {
 
 **Production Insight:** Latency distribution visible, /health ~0.1ms vs /store ~150ms (database overhead). p99 tracking reveals worst-case user experience. Error rate fluctuates 0-30% with traffic patterns.
 
+
+### Distributed Tracing 
+- Integrated OpenTelemetry SDK for trace instrumentation
+- HTTP handlers with otelhttp middleware
+- Added custom spans for database queries with metadata
+- Deployed Jaeger on observability VM
+- Configured OTLP HTTP exporter to send traces from Cloud Run to Jaeger
+- Opened firewall port 4318 for trace ingestion
+
+**Key Learning:** Distributed tracing reveals WHERE time is spent, not just HOW MUCH. Nested spans show parent-child relationships. Tags provide context. Foundation for performance optimization.
+
+**Production Insight:** Traces show individual request journeys through the system. Database network latency is the primary bottleneck, candidate for caching layer.
+
+
 **Live URLs:**
 - App: https://stickermule-app-386055911814.us-central1.run.app
 - Prometheus: http://35.239.84.255:9090
 - Grafana: http://35.239.84.255:3000
+- Jaeger UI: http://35.239.84.255:16686
+- OpenTelemetry: http://35.239.84.255:4318
