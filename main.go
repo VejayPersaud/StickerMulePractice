@@ -18,6 +18,17 @@ import (
 	"github.com/graphql-go/handler"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	// OpenTelemetry imports
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+
+
 	
 )
 
@@ -54,6 +65,51 @@ type Handler struct {
 	database *sql.DB
 	logger *slog.Logger
 }
+
+
+
+//initTracer initializes OpenTelemetry tracing
+func initTracer() (*trace.TracerProvider, error) {
+	//Get Jaeger endpoint from environment 
+	jaegerEndpoint := os.Getenv("JAEGER_ENDPOINT")
+	if jaegerEndpoint == "" {
+		jaegerEndpoint = "localhost:4318" //Local development default
+	}
+
+	//Create OTLP HTTP exporter
+	exporter, err := otlptracehttp.New(
+		context.Background(),
+		otlptracehttp.WithEndpoint(jaegerEndpoint),
+		otlptracehttp.WithInsecure(), //Use HTTP (not HTTPS) for internal communication
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create trace exporter: %w", err)
+	}
+
+	//Create resource describing this service
+	resource, err := resource.New(
+		context.Background(),
+		resource.WithAttributes(
+			semconv.ServiceName("stickermule-app"),
+			semconv.ServiceVersion("1.0.0"),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource: %w", err)
+	}
+
+	//Create tracer provider
+	tp := trace.NewTracerProvider(
+		trace.WithBatcher(exporter),
+		trace.WithResource(resource),
+	)
+
+	//Set as global tracer provider
+	otel.SetTracerProvider(tp)
+
+	return tp, nil
+}
+
 
 
 //responseWriter wraps http.ResponseWriter to capture status code
@@ -157,6 +213,11 @@ func (h *SamplingHandler) WithGroup(name string) slog.Handler {
 
 //Method on Handler, can create test Handler with mock db
 func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
+	//Start a custom span for this handler
+	ctx := r.Context()
+	tracer := otel.Tracer("stickermule-app")
+	ctx, span := tracer.Start(ctx, "getStoreInfo")
+	defer span.End()
 
 	storeID := r.URL.Query().Get("id")
 	if storeID == "" {
@@ -170,6 +231,14 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 		"remote_addr", r.RemoteAddr,
 	)
 
+	//Create a child span for the database query
+	_, dbSpan := tracer.Start(ctx, "database.query.stores")
+	dbSpan.SetAttributes(
+		//Add metadata to the span
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.statement", "SELECT name, revenue, total_orders, active FROM stores WHERE id = $1"),
+		attribute.String("store.id", storeID),
+	)
 
 	//Query Postgres
 	var name string
@@ -179,6 +248,8 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 
 	query := "SELECT name, revenue, total_orders, active FROM stores WHERE id = $1"
 	err := h.database.QueryRow(query, storeID).Scan(&name, &revenue, &totalOrders, &active)
+
+	dbSpan.End() //End the database span
 
 	if err == sql.ErrNoRows {
 		h.logger.Warn("store not found",
@@ -208,9 +279,6 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 		"revenue", revenue,
 	)
 	w.Write([]byte(response))
-
-
-
 }
 
 //Method that returns a GraphQL resolver function (READ)
@@ -576,6 +644,18 @@ func main() {
 	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration)
 	fmt.Println("Prometheus metrics registered")
 
+	//Initialize OpenTelemetry tracing
+	tp, err := initTracer()
+	if err != nil {
+		log.Fatal("Failed to initialize tracer:", err)
+	}
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			log.Printf("Error shutting down tracer provider: %v", err)
+		}
+	}()
+	fmt.Println("OpenTelemetry tracing initialized")
+
 
 	//Connect to Postgres
 	fmt.Print("Connecting to Postgres...")
@@ -632,8 +712,18 @@ func main() {
 		logger:		logger,		
 	}
 
-	http.Handle("/health", prometheusMiddleware(http.HandlerFunc(storeHandler.healthCheck)))
-	http.Handle("/store", prometheusMiddleware(http.HandlerFunc(storeHandler.getStoreInfo)))
+	http.Handle("/health", 
+		otelhttp.NewHandler(
+			prometheusMiddleware(http.HandlerFunc(storeHandler.healthCheck)),
+			"GET /health",
+		),
+	)
+	http.Handle("/store", 
+		otelhttp.NewHandler(
+			prometheusMiddleware(http.HandlerFunc(storeHandler.getStoreInfo)),
+			"GET /store",
+		),
+	)
 	http.Handle("/metrics", promhttp.Handler())
 
 	//Create the schema using our Handler
