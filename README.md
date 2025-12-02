@@ -153,11 +153,30 @@ mutation {
 
 
 **Live URLs:**
-- App: https://stickermule-app-386055911814.us-central1.run.app
-- Prometheus: http://35.239.84.255:9090
-- Grafana: http://35.239.84.255:3000
-- Jaeger UI: http://35.239.84.255:16686
-- OpenTelemetry: http://35.239.84.255:4318
+- Production app: https://stickermule-app-386055911814.us-central1.run.app
+- Prometheus: http://35.225.111.249:9090
+- Grafana: http://35.225.111.249:3000
+- Jaeger: http://35.225.111.249:16686
+- Redis: http://35.225.111.249:6379
+- All tests passing (13/13)
+- CI/CD operational (GitHub Actions)
+- Full observability: Metrics + Logs + Traces
 
 
-## Test Redeploy Fixing Jaeger
+
+### Redis Caching
+- Deployed Redis 7 on observability VM (256MB, LRU eviction)
+- Using cache aside pattern for read operations
+- Cache invalidation on mutations (create/update/delete)
+- Added cache hit/miss Prometheus metrics
+- X-Cache headers show HIT/MISS status for debugging
+- Distributed tracing includes cache.get and cache.set spans
+- **Performance Results:**
+  - Cache hit rate: 55% initial
+  - Network latency to Neon reduced significantly
+
+**Key Learning:** Cache-aside pattern with TTL and invalidation prevents stale data. Graceful degradation ensures app works even if Redis fails. Metrics  show cache effectiveness.
+
+**Production Insight:** Hit rate climbs as cache warms up. Cache metrics enable optimization.
+
+**Architecture:** Redis co-located with observability stack. Cloud Run connects via public IP (will move to internal networking with Kubernetes later).
