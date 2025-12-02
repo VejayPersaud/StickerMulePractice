@@ -158,3 +158,6 @@ mutation {
 - Grafana: http://35.239.84.255:3000
 - Jaeger UI: http://35.239.84.255:16686
 - OpenTelemetry: http://35.239.84.255:4318
+
+
+## Test Redeploy Fixing Jaeger
