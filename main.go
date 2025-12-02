@@ -10,6 +10,7 @@ import (
 	"os"
 	"context"
 	"time"
+	//"encoding/json"
 	
 
 	"github.com/joho/godotenv"
@@ -19,7 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	// OpenTelemetry imports
+	//OpenTelemetry imports
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -27,6 +28,9 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
+
+	//Redis
+	"github.com/redis/go-redis/v9"
 
 
 	
@@ -53,6 +57,26 @@ var (
 		},
 		[]string{"method", "path"},
 	)
+
+	//cacheHits tracks cache hit operations
+	cacheHits = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cache_hits_total",
+			Help: "Total number of cache hits",
+		},
+		[]string{"cache_key_prefix"},
+	)
+
+	//cacheMisses tracks cache miss operations
+	cacheMisses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cache_misses_total",
+			Help: "Total number of cache misses",
+		},
+		[]string{"cache_key_prefix"},
+	)
+
+
 )
 
 
@@ -64,6 +88,7 @@ var (
 type Handler struct {
 	database *sql.DB
 	logger *slog.Logger
+	redis    *redis.Client
 }
 
 
@@ -108,6 +133,35 @@ func initTracer() (*trace.TracerProvider, error) {
 	otel.SetTracerProvider(tp)
 
 	return tp, nil
+}
+
+//initRedis initializes Redis client
+func initRedis() *redis.Client {
+	//Get Redis address from environment (with fallback to localhost for local dev)
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379" //Local development default
+	}
+
+	//Create Redis client
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "", //No password for now
+		DB:       0,  //Use default DB
+	})
+
+	//Test connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Printf("Warning: Redis connection failed: %v", err)
+		log.Printf("Continuing without cache...")
+		return nil //Return nil if Redis unavailable 
+	}
+
+	fmt.Println("Redis connected successfully")
+	return rdb
 }
 
 
@@ -231,10 +285,46 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 		"remote_addr", r.RemoteAddr,
 	)
 
+	//Try cache first (if Redis is available)
+	if h.redis != nil {
+		_, cacheSpan := tracer.Start(ctx, "cache.get")
+		cacheSpan.SetAttributes(
+			attribute.String("cache.key", "store:"+storeID),
+		)
+
+		cacheKey := "store:" + storeID
+		cachedData, err := h.redis.Get(ctx, cacheKey).Result()
+		cacheSpan.End()
+
+		if err == nil {
+			//CACHE HIT!
+			h.logger.Info("cache hit",
+				"store_id", storeID,
+				"cache_key", cacheKey,
+			)
+			cacheHits.WithLabelValues("store").Inc()
+			w.Header().Set("X-Cache", "HIT")
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(cachedData))
+			return
+		} else if err != redis.Nil {
+			//Redis error (not just cache miss)
+			h.logger.Warn("cache error",
+				"store_id", storeID,
+				"error", err.Error(),
+			)
+		} else {
+			//Cache miss,continue to database
+			h.logger.Info("cache miss",
+				"store_id", storeID,
+			)
+			cacheMisses.WithLabelValues("store").Inc()
+		}
+	}
+
 	//Create a child span for the database query
 	_, dbSpan := tracer.Start(ctx, "database.query.stores")
 	dbSpan.SetAttributes(
-		//Add metadata to the span
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.statement", "SELECT name, revenue, total_orders, active FROM stores WHERE id = $1"),
 		attribute.String("store.id", storeID),
@@ -249,7 +339,7 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 	query := "SELECT name, revenue, total_orders, active FROM stores WHERE id = $1"
 	err := h.database.QueryRow(query, storeID).Scan(&name, &revenue, &totalOrders, &active)
 
-	dbSpan.End() //End the database span
+	dbSpan.End()
 
 	if err == sql.ErrNoRows {
 		h.logger.Warn("store not found",
@@ -273,11 +363,39 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 		storeID, name, revenue, totalOrders, active,
 	)
 
+	//Store in cache for next time 
+	if h.redis != nil {
+		_, cacheSetSpan := tracer.Start(ctx, "cache.set")
+		cacheSetSpan.SetAttributes(
+			attribute.String("cache.key", "store:"+storeID),
+			attribute.Int("cache.ttl_seconds", 300),
+		)
+
+		cacheKey := "store:" + storeID
+		err := h.redis.Set(ctx, cacheKey, response, 5*time.Minute).Err()
+		cacheSetSpan.End()
+
+		if err != nil {
+			h.logger.Warn("failed to cache response",
+				"store_id", storeID,
+				"error", err.Error(),
+			)
+		} else {
+			h.logger.Info("response cached",
+				"store_id", storeID,
+				"ttl", "5m",
+			)
+		}
+	}
+
 	h.logger.Info("store query successful",
 		"store_id", storeID,
 		"name", name,
 		"revenue", revenue,
 	)
+
+	w.Header().Set("X-Cache", "MISS")
+	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(response))
 }
 
@@ -382,6 +500,23 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 		"name", name,
 	)
 
+	//Invalidate cache for the new store
+	if h.redis != nil {
+		cacheKey := fmt.Sprintf("store:%d", newID)
+		err := h.redis.Del(context.Background(), cacheKey).Err()
+		if err != nil {
+			h.logger.Warn("failed to invalidate cache after create",
+				"store_id", newID,
+				"error", err.Error(),
+			)
+		} else {
+			h.logger.Info("cache invalidated after create",
+				"store_id", newID,
+			)
+		}
+	}
+
+
 	//Return the created store
 	return map[string]interface{}{
 		"id":           newID,
@@ -440,6 +575,22 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 	h.logger.Info("store updated successfully",
 		"store_id", id,
 	)
+
+	//Invalidate cache for the updated store
+	if h.redis != nil {
+		cacheKey := fmt.Sprintf("store:%d", id)
+		err := h.redis.Del(context.Background(), cacheKey).Err()
+		if err != nil {
+			h.logger.Warn("failed to invalidate cache after update",
+				"store_id", id,
+				"error", err.Error(),
+			)
+		} else {
+			h.logger.Info("cache invalidated after update",
+				"store_id", id,
+			)
+		}
+	}
 
 
 	//Fetch and return updated store
@@ -512,6 +663,24 @@ func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, err
 	h.logger.Info("store deleted successfully",
 		"store_id", id,
 	)
+
+	//Invalidate cache for the deleted store
+	if h.redis != nil {
+		cacheKey := fmt.Sprintf("store:%d", id)
+		err := h.redis.Del(context.Background(), cacheKey).Err()
+		if err != nil {
+			h.logger.Warn("failed to invalidate cache after delete",
+				"store_id", id,
+				"error", err.Error(),
+			)
+		} else {
+			h.logger.Info("cache invalidated after delete",
+				"store_id", id,
+			)
+		}
+	}
+
+
 
 	//Return success response
 	return map[string]interface{}{
@@ -641,7 +810,7 @@ func main() {
 	var err error
 
 	//Register Prometheus metrics
-	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration)
+	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration, cacheHits, cacheMisses)
 	fmt.Println("Prometheus metrics registered")
 
 	//Initialize OpenTelemetry tracing
@@ -707,9 +876,13 @@ func main() {
 
 
 
+	//Initialize Redis
+	redisClient := initRedis()
+
 	storeHandler := &Handler{
-		database:		db,
-		logger:		logger,		
+		database: db,
+		logger:   logger,
+		redis:    redisClient,
 	}
 
 	http.Handle("/health", 

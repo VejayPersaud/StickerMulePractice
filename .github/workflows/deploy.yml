@@ -27,4 +27,4 @@ jobs:
           --region us-central1 \
           --allow-unauthenticated \
           --service-account=github-actions@stickermulepractice.iam.gserviceaccount.com \
-          --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}",JAEGER_ENDPOINT="${{ secrets.JAEGER_ENDPOINT }}"
+          --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}",JAEGER_ENDPOINT="${{ secrets.JAEGER_ENDPOINT }}",REDIS_ADDR="${{ secrets.REDIS_ADDR }}"
