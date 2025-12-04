@@ -27,4 +27,4 @@ jobs:
           --region us-central1 \
           --allow-unauthenticated \
           --service-account=github-actions@stickermulepractice.iam.gserviceaccount.com \
-          --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}",JAEGER_ENDPOINT="${{ secrets.JAEGER_ENDPOINT }}",REDIS_ADDR="${{ secrets.REDIS_ADDR }}"
+          --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}",JAEGER_ENDPOINT="${{ secrets.JAEGER_ENDPOINT }}",REDIS_ADDR="${{ secrets.REDIS_ADDR }}",STRESS_TEST_API_KEY="${{ secrets.STRESS_TEST_API_KEY }}",BASE_URL="https://stickermule-app-386055911814.us-central1.run.app"
