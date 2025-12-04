@@ -10,7 +10,8 @@ import (
 	"os"
 	"context"
 	"time"
-	//"encoding/json"
+	"encoding/json"
+	"os/exec"
 	
 
 	"github.com/joho/godotenv"
@@ -702,6 +703,118 @@ func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("health check response sent")
 }
 
+//stressTest triggers a k6 load test and returns results
+func (h *Handler) stressTest(w http.ResponseWriter, r *http.Request) {
+	//Only allow POST
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	//Simple API key check
+	apiKey := r.Header.Get("X-API-Key")
+	expectedKey := os.Getenv("STRESS_TEST_API_KEY")
+	if expectedKey == "" {
+		expectedKey = "dev-only-key" //Local development default
+	}
+	
+	if apiKey != expectedKey {
+		h.logger.Warn("unauthorized stress test attempt",
+			"remote_addr", r.RemoteAddr,
+		)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	h.logger.Info("stress test triggered",
+		"remote_addr", r.RemoteAddr,
+	)
+
+	//Return immediate response (test runs async)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	
+	response := map[string]interface{}{
+		"status":  "accepted",
+		"message": "Load test started. Check metrics in Grafana.",
+		"grafana": "http://35.225.111.249:3000",
+	}
+	
+	json.NewEncoder(w).Encode(response)
+
+	//Run k6 test asynchronously
+	go h.runK6Test()
+}
+
+// runK6Test executes a k6 load test script
+func (h *Handler) runK6Test() {
+	h.logger.Info("starting k6 load test")
+	
+	// Create a simple k6 script inline
+	script := `
+		import http from 'k6/http';
+		import { check, sleep } from 'k6';
+
+		export const options = {
+		stages: [
+			{ duration: '30s', target: 20 },
+			{ duration: '1m', target: 20 },
+			{ duration: '30s', target: 0 },
+		],
+		};
+
+		export default function () {
+		const res = http.get('` + os.Getenv("BASE_URL") + `/health');
+		check(res, {
+			'status is 200': (r) => r.status === 200,
+		});
+		sleep(1);
+		}
+		`
+
+	// Write script to temporary file
+	tmpFile, err := os.CreateTemp("", "k6-test-*.js")
+	if err != nil {
+		h.logger.Error("failed to create temp file", "error", err.Error())
+		return
+	}
+	defer os.Remove(tmpFile.Name())
+	
+	if _, err := tmpFile.WriteString(script); err != nil {
+		h.logger.Error("failed to write script", "error", err.Error())
+		return
+	}
+	tmpFile.Close()
+
+	// Execute k6
+	cmd := exec.Command("k6", "run", tmpFile.Name())
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		h.logger.Error("k6 test failed",
+			"error", err.Error(),
+			"output", string(output),
+		)
+		return
+	}
+	
+	h.logger.Info("k6 test completed successfully",
+		"output_preview", string(output[:min(500, len(output))]),
+	)
+}
+
+
+//min returns the smaller of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+
+
+
 
 
 
@@ -897,6 +1010,14 @@ func main() {
 			"GET /store",
 		),
 	)
+	http.Handle("/demo/stress-test",
+		otelhttp.NewHandler(
+			prometheusMiddleware(http.HandlerFunc(storeHandler.stressTest)),
+			"POST /demo/stress-test",
+		),
+	)
+
+
 	http.Handle("/metrics", promhttp.Handler())
 
 	//Create the schema using our Handler
