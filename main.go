@@ -1104,7 +1104,12 @@ func main() {
 	})
 
 	//Wrap GraphQL handler with CORS middleware
-	http.Handle("/graphql", corsMiddleware(graphqlHandler))
+	http.Handle("/graphql", 
+		otelhttp.NewHandler(
+			corsMiddleware(graphqlHandler),
+			"POST /graphql",
+		),
+	)
 	//Root endpoint
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
