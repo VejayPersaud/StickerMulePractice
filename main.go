@@ -211,6 +211,25 @@ func prometheusMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+//corsMiddleware adds CORS headers for frontend access
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		//Allow requests from any origin (for development)
+		//In production, you'd restrict this to your frontend domain
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		//Handle preflight OPTIONS request
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 
 
 //__________________________________________________________________LOGGING__________________________________________________________________
@@ -1028,11 +1047,13 @@ func main() {
 
 	//Create GraphQL HTTP handler
 	graphqlHandler := handler.New(&handler.Config{
-    	Schema: &schema,
-    	Pretty: true,
-    	GraphiQL: true,
+		Schema:   &schema,
+		Pretty:   true,
+		GraphiQL: true,
 	})
-	http.Handle("/graphql", graphqlHandler)
+
+	//Wrap GraphQL handler with CORS middleware
+	http.Handle("/graphql", corsMiddleware(graphqlHandler))
 	//Root endpoint
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
