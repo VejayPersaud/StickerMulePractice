@@ -419,6 +419,53 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(response))
 }
 
+//storesResolver returns all stores (LIST)
+func (h *Handler) storesResolver(p graphql.ResolveParams) (interface{}, error) {
+	h.logger.Info("graphql stores query - fetching all stores")
+
+	query := "SELECT id, name, revenue, total_orders, active FROM stores ORDER BY id"
+	rows, err := h.database.Query(query)
+	if err != nil {
+		h.logger.Error("database error during stores query",
+			"error", err.Error(),
+		)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stores []map[string]interface{}
+
+	for rows.Next() {
+		var id int
+		var name string
+		var revenue float64
+		var totalOrders int
+		var active bool
+
+		err := rows.Scan(&id, &name, &revenue, &totalOrders, &active)
+		if err != nil {
+			h.logger.Error("error scanning store row",
+				"error", err.Error(),
+			)
+			return nil, err
+		}
+
+		stores = append(stores, map[string]interface{}{
+			"id":           id,
+			"name":         name,
+			"revenue":      revenue,
+			"total_orders": totalOrders,
+			"active":       active,
+		})
+	}
+
+	h.logger.Info("graphql stores query successful",
+		"count", len(stores),
+	)
+
+	return stores, nil
+}
+
 //Method that returns a GraphQL resolver function (READ)
 func (h *Handler) storeResolver(p graphql.ResolveParams) (interface{}, error){
 	//Extract ID from query
@@ -873,6 +920,10 @@ func createSchema(h *Handler) (graphql.Schema, error) {
 					},
 				},
 				Resolve: h.storeResolver, //Use the Handler's method!
+			},
+			"stores": &graphql.Field{
+				Type:    graphql.NewList(storeType),
+				Resolve: h.storesResolver,
 			},
 		},
 	})
