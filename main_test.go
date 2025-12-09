@@ -133,7 +133,7 @@ func TestGetStoreInfo_NotFound(t *testing.T) {
 		t.Errorf("Expected status 404, got %d", w.Code)
 	}
 
-	expectedBody := `{"error": "Store not found"}`
+	expectedBody := `{"error": "store not found"}`
 	if w.Body.String() != expectedBody {
 		t.Errorf("Expected body:\n%s\n\nGot:\n%s", expectedBody, w.Body.String())
 	}
