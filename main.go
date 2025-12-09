@@ -366,7 +366,7 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 			"store_id", storeID,
 		)
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error": "Store not found"}`))
+		w.Write([]byte(`{"error": "store not found"}`))
 		return
 	} else if err != nil {
 		h.logger.Error("database error",
@@ -494,7 +494,7 @@ func (h *Handler) storeResolver(p graphql.ResolveParams) (interface{}, error){
 		h.logger.Warn("store not found",
 			"store_id", id,
 		)
-		return nil, fmt.Errorf("Store not found")
+		return nil, fmt.Errorf("store not found")
 	}
 
 	if err != nil {
