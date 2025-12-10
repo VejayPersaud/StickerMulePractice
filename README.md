@@ -180,3 +180,33 @@ mutation {
 **Production Insight:** Hit rate climbs as cache warms up. Cache metrics enable optimization.
 
 **Architecture:** Redis co-located with observability stack. Cloud Run connects via public IP (will move to internal networking with Kubernetes later).
+
+## CI/CD Pipeline Refinement
+
+### Backend CI/CD Pipeline
+- **Two-stage pipeline:** `test` job must pass before `deploy` job runs
+- **Code quality gates:** `go vet` and `staticcheck` catch bugs before deployment
+- **Test coverage threshold:** Pipeline fails if coverage drops below 20%
+- **Race condition detection:** `go test -race` flag identifies concurrency bugs
+- **Dependency caching:** Go modules cached between runs for faster builds
+- **Version tagging:** Automatic `v1.0.TIMESTAMP` tags on each successful deploy
+- **PR support:** Tests run on pull requests without deploying
+
+### Frontend CI/CD Pipeline
+- **TypeScript type checking:** `tsc --noEmit` catches type errors before deploy
+- **ESLint integration:** Code quality enforcement on every push
+- **Build verification:** `npm run build` must succeed before deployment
+- **npm caching:** Dependencies cached for faster CI runs
+- **Version tagging:** Matches backend tagging pattern
+
+
+### Key Files Modified
+- `backend/.github/workflows/deploy.yml` - Full CI/CD with test gates
+- `frontend/.github/workflows/deploy.yml` - TypeScript/ESLint checks
+
+**Key Learning:** `needs: test` creates job dependencies - deploy only runs after tests pass. `permissions: contents: write` required for git tagging. Go version in CI must match `go.mod` exactly.
+
+**Bug Fixes:**
+- Go 1.25 required for module compatibility (dependencies needed newer Go)
+- `staticcheck` enforces Go style conventions (lowercase error messages)
+- GitHub Actions needs explicit write permission for pushing tags
