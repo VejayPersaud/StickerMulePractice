@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -51,43 +51,11 @@ jobs:
             exit 1
           fi
 
-  # Job 2: Deploy to Staging (on develop branch)
-  deploy-staging:
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-    environment: staging
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Deploy to Cloud Run (Staging)
-        run: |
-          gcloud run deploy stickermule-app-staging \
-            --source . \
-            --region us-central1 \
-            --allow-unauthenticated \
-            --service-account=github-actions@stickermulepractice.iam.gserviceaccount.com \
-            --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}",JAEGER_ENDPOINT="${{ secrets.JAEGER_ENDPOINT }}",REDIS_ADDR="${{ secrets.REDIS_ADDR }}",STRESS_TEST_API_KEY="${{ secrets.STRESS_TEST_API_KEY }}",BASE_URL="https://stickermule-app-staging-386055911814.us-central1.run.app"
-
-      - name: Output staging URL
-        run: echo "Staging deployed to https://stickermule-app-staging-386055911814.us-central1.run.app"
-
-  # Job 3: Deploy to Production (on main branch)
-  deploy-production:
+  # Job 2: Deploy to Production
+  deploy:
     runs-on: ubuntu-latest
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
     
     steps:
       - name: Checkout code
@@ -101,7 +69,7 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy to Cloud Run (Production)
+      - name: Deploy to Cloud Run
         run: |
           gcloud run deploy stickermule-app \
             --source . \
