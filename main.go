@@ -525,9 +525,22 @@ func (h *Handler) storeResolver(p graphql.ResolveParams) (interface{}, error){
 }
 
 
-//createStoreResolver handles creating a new store (CREATE)
+//createStoreResolver handles creating a new store (CREATE) - REQUIRES AUTH
 func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, error) {
-	//Extract arguments
+	// 1. Get user ID from request context (requires authentication)
+	r, ok := p.Context.Value("httpRequest").(*http.Request)
+	if !ok {
+		h.logger.Error("failed to get http request from context")
+		return nil, fmt.Errorf("authentication required")
+	}
+
+	userID, err := h.getUserIDFromContext(r)
+	if err != nil {
+		h.logger.Warn("unauthorized create store attempt", "error", err.Error())
+		return nil, fmt.Errorf("authentication required: %v", err)
+	}
+
+	// 2. Extract arguments
 	name, nameOk := p.Args["name"].(string)
 	revenue, revenueOk := p.Args["revenue"].(float64)
 	active, activeOk := p.Args["active"].(bool)
@@ -547,12 +560,13 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 		"name", name,
 		"revenue", revenue,
 		"active", active,
+		"user_id", userID,
 	)
 
-	//Insert into database and return the new ID
+	// 3. Insert into database WITH user_id
 	var newID int
-	query := "INSERT INTO stores (name, revenue, total_orders, active) VALUES ($1, $2, $3, $4) RETURNING id"
-	err := h.database.QueryRow(query, name, revenue, 0, active).Scan(&newID)
+	query := "INSERT INTO stores (name, revenue, total_orders, active, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id"
+	err = h.database.QueryRow(query, name, revenue, 0, active, userID).Scan(&newID)
 
 	if err != nil {
 		h.logger.Error("database error during insert",
@@ -565,9 +579,10 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 	h.logger.Info("store created successfully",
 		"store_id", newID,
 		"name", name,
+		"user_id", userID,
 	)
 
-	//Invalidate cache for the new store
+	// 4. Invalidate cache
 	if h.redis != nil {
 		cacheKey := fmt.Sprintf("store:%d", newID)
 		err := h.redis.Del(context.Background(), cacheKey).Err()
@@ -576,21 +591,17 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 				"store_id", newID,
 				"error", err.Error(),
 			)
-		} else {
-			h.logger.Info("cache invalidated after create",
-				"store_id", newID,
-			)
 		}
 	}
 
-
-	//Return the created store
+	// 5. Return the created store
 	return map[string]interface{}{
 		"id":           newID,
 		"name":         name,
 		"revenue":      revenue,
 		"total_orders": 0,
 		"active":       active,
+		"user_id":      userID,
 	}, nil
 }
 
@@ -841,6 +852,37 @@ func (h *Handler) loginResolver(p graphql.ResolveParams) (interface{}, error) {
 	}, nil
 }
 
+//getUserIDFromContext extracts user ID from the authorization header
+func (h *Handler) getUserIDFromContext(r *http.Request) (int, error) {
+	//Get Authorization header
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return 0, fmt.Errorf("authorization header required")
+	}
+
+	//Extract token (format: "Bearer <token>")
+	tokenString := ""
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		tokenString = authHeader[7:]
+	} else {
+		return 0, fmt.Errorf("invalid authorization header format")
+	}
+
+	//Verify token
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return 0, fmt.Errorf("server configuration error")
+	}
+
+	authService := NewAuthService(h.database, h.logger, jwtSecret)
+	userID, err := authService.VerifyToken(tokenString)
+	if err != nil {
+		return 0, err
+	}
+
+	return userID, nil
+}
+
 
 
 
@@ -981,6 +1023,7 @@ var storeType = graphql.NewObject(graphql.ObjectConfig{
 		"revenue": &graphql.Field{Type: graphql.Float,},
 		"total_orders": &graphql.Field{Type: graphql.Int,},
 		"active": &graphql.Field{Type: graphql.Boolean,},
+		"user_id":      &graphql.Field{Type: graphql.Int},
 
 	},
 })
@@ -1229,11 +1272,20 @@ func main() {
     	log.Fatal("Failed to create GraphQL schema:", err)
 	}
 
-	//Create GraphQL HTTP handler
-	graphqlHandler := handler.New(&handler.Config{
-		Schema:   &schema,
-		Pretty:   true,
-		GraphiQL: true,
+	// Create a custom GraphQL handler that injects HTTP request into context
+	graphqlHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Create a new context with the HTTP request
+		ctx := context.WithValue(r.Context(), "httpRequest", r)
+		
+		// Create the GraphQL handler
+		h := handler.New(&handler.Config{
+			Schema:   &schema,
+			Pretty:   true,
+			GraphiQL: true,
+		})
+		
+		// Serve the request with the updated context
+		h.ContextHandler(ctx, w, r)
 	})
 
 	//Wrap GraphQL handler with CORS middleware

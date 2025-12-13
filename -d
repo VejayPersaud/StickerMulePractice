@@ -1,0 +1,9 @@
+{
+	"data": null,
+	"errors": [
+		{
+			"message": "Must provide an operation.",
+			"locations": []
+		}
+	]
+}
