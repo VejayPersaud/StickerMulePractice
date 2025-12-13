@@ -86,6 +86,49 @@ func (a *AuthService) Register(email, password string) (*User, string, error) {
 	return user, token, nil
 }
 
+//Login authenticates a user and returns a JWT token
+func (a *AuthService) Login(email, password string) (*User, string, error) {
+	// 1. Validate input
+	if email == "" || password == "" {
+		return nil, "", fmt.Errorf("email and password are required")
+	}
+	
+	a.logger.Info("user login attempt", "email", email)
+	
+	// 2. Find user by email
+	var user User
+	query := "SELECT id, email, password_hash, created_at FROM users WHERE email = $1"
+	err := a.db.QueryRow(query, email).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt)
+	
+	if err == sql.ErrNoRows {
+		a.logger.Warn("login failed - user not found", "email", email)
+		return nil, "", fmt.Errorf("invalid email or password")
+	}
+	if err != nil {
+		a.logger.Error("database error during login", "email", email, "error", err.Error())
+		return nil, "", fmt.Errorf("login failed")
+	}
+	
+	// 3. Compare password hash
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err != nil {
+		a.logger.Warn("login failed - invalid password", "email", email)
+		return nil, "", fmt.Errorf("invalid email or password")
+	}
+	
+	a.logger.Info("login successful", "user_id", user.ID, "email", email)
+	
+	// 4. Generate JWT token
+	token, err := a.generateToken(&user)
+	if err != nil {
+		a.logger.Error("failed to generate token", "user_id", user.ID, "error", err.Error())
+		return nil, "", fmt.Errorf("failed to generate token")
+	}
+	
+	return &user, token, nil
+}
+
+
 //generateToken creates a JWT token for a user
 func (a *AuthService) generateToken(user *User) (string, error) {
 	//Create claims (the data we put inside the token)
@@ -106,3 +149,4 @@ func (a *AuthService) generateToken(user *User) (string, error) {
 	
 	return signedToken, nil
 }
+
