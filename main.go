@@ -799,6 +799,48 @@ func (h *Handler) registerResolver(p graphql.ResolveParams) (interface{}, error)
 	}, nil
 }
 
+//LoginResolver handles user login
+func (h *Handler) loginResolver(p graphql.ResolveParams) (interface{}, error) {
+	//Extract arguments
+	email, emailOk := p.Args["email"].(string)
+	password, passwordOk := p.Args["password"].(string)
+
+	if !emailOk || !passwordOk {
+		h.logger.Error("invalid arguments for login")
+		return nil, fmt.Errorf("email and password are required")
+	}
+
+	//Get JWT secret from environment
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		h.logger.Error("JWT_SECRET not set")
+		return nil, fmt.Errorf("server configuration error")
+	}
+
+	//Create auth service
+	authService := NewAuthService(h.database, h.logger, jwtSecret)
+
+	//Login the user
+	user, token, err := authService.Login(email, password)
+	if err != nil {
+		return nil, err
+	}
+
+	h.logger.Info("user logged in successfully",
+		"user_id", user.ID,
+		"email", user.Email,
+	)
+
+	//Return auth response
+	return map[string]interface{}{
+		"token": token,
+		"user": map[string]interface{}{
+			"id":    user.ID,
+			"email": user.Email,
+		},
+	}, nil
+}
+
 
 
 
@@ -1055,6 +1097,18 @@ func createSchema(h *Handler) (graphql.Schema, error) {
 					},
 				},
 				Resolve: h.registerResolver,
+			},
+			"login": &graphql.Field{
+				Type: authResponseType,
+				Args: graphql.FieldConfigArgument{
+					"email": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"password": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+				},
+				Resolve: h.loginResolver,
 			},
 		},
 	})
