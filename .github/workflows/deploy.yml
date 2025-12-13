@@ -1,17 +1,13 @@
 name: CI/CD Pipeline
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
 permissions:
   contents: write
-
 env:
   GO_VERSION: '1.25'
-
 jobs:
   # Job 1: Test and Lint
   test:
@@ -20,28 +16,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-
       - name: Install dependencies
         run: go mod download
-
       - name: Run go vet
         run: go vet ./...
-
       - name: Install staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
-
       - name: Run staticcheck
         run: staticcheck ./...
-
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out ./...
-
       - name: Check coverage
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
@@ -50,7 +39,6 @@ jobs:
             echo "Coverage is below 20%!"
             exit 1
           fi
-
   # Job 2: Deploy to Production
   deploy:
     runs-on: ubuntu-latest
@@ -60,15 +48,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
-
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy stickermule-app \
@@ -76,8 +61,7 @@ jobs:
             --region us-central1 \
             --allow-unauthenticated \
             --service-account=github-actions@stickermulepractice.iam.gserviceaccount.com \
-            --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}",JAEGER_ENDPOINT="${{ secrets.JAEGER_ENDPOINT }}",REDIS_ADDR="${{ secrets.REDIS_ADDR }}",STRESS_TEST_API_KEY="${{ secrets.STRESS_TEST_API_KEY }}",BASE_URL="https://stickermule-app-386055911814.us-central1.run.app"
-
+            --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}",JAEGER_ENDPOINT="${{ secrets.JAEGER_ENDPOINT }}",REDIS_ADDR="${{ secrets.REDIS_ADDR }}",STRESS_TEST_API_KEY="${{ secrets.STRESS_TEST_API_KEY }}",JWT_SECRET="${{ secrets.JWT_SECRET }}",BASE_URL="https://stickermule-app-386055911814.us-central1.run.app"
       - name: Tag release
         run: |
           git config user.name "GitHub Actions"
