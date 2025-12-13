@@ -757,6 +757,52 @@ func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, err
 }
 
 
+//registerResolver handles user registration
+func (h *Handler) registerResolver(p graphql.ResolveParams) (interface{}, error) {
+	//Extract arguments
+	email, emailOk := p.Args["email"].(string)
+	password, passwordOk := p.Args["password"].(string)
+
+	if !emailOk || !passwordOk {
+		h.logger.Error("invalid arguments for register")
+		return nil, fmt.Errorf("email and password are required")
+	}
+
+	//Get JWT secret from environment
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		h.logger.Error("JWT_SECRET not set")
+		return nil, fmt.Errorf("server configuration error")
+	}
+
+	//Create auth service
+	authService := NewAuthService(h.database, h.logger, jwtSecret)
+
+	//Register the user
+	user, token, err := authService.Register(email, password)
+	if err != nil {
+		return nil, err
+	}
+
+	h.logger.Info("user registered successfully",
+		"user_id", user.ID,
+		"email", user.Email,
+	)
+
+	//Return auth response
+	return map[string]interface{}{
+		"token": token,
+		"user": map[string]interface{}{
+			"id":    user.ID,
+			"email": user.Email,
+		},
+	}, nil
+}
+
+
+
+
+
 func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("health check endpoint called",
 		"method", r.Method,
@@ -906,6 +952,27 @@ var deleteResultType = graphql.NewObject(graphql.ObjectConfig{
 	},
 })
 
+//User type for GraphQL
+var userType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "User",
+	Fields: graphql.Fields{
+		"id":         &graphql.Field{Type: graphql.Int},
+		"email":      &graphql.Field{Type: graphql.String},
+		"created_at": &graphql.Field{Type: graphql.String},
+	},
+})
+
+//AuthResponse type (returns both user and token)
+var authResponseType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "AuthResponse",
+	Fields: graphql.Fields{
+		"token": &graphql.Field{Type: graphql.String},
+		"user":  &graphql.Field{Type: userType},
+	},
+})
+
+
+
 
 //Function that creates the GraphQL schema with a Handler
 func createSchema(h *Handler) (graphql.Schema, error) {
@@ -977,6 +1044,18 @@ func createSchema(h *Handler) (graphql.Schema, error) {
 				},
 				Resolve: h.deleteStoreResolver,
 			}, 
+			"register": &graphql.Field{
+				Type: authResponseType,
+				Args: graphql.FieldConfigArgument{
+					"email": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"password": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+				},
+				Resolve: h.registerResolver,
+			},
 		},
 	})
 
