@@ -657,6 +657,9 @@ func TestDeleteStoreResolver_Success(t *testing.T) {
 }
 
 func TestDeleteStoreResolver_NotFound(t *testing.T) {
+	//ARRANGE: Set JWT_SECRET for testing
+	t.Setenv("JWT_SECRET", "test-secret-key")
+	
 	//ARRANGE: Create mock database
 	fakeDB, mock, err := sqlmock.New()
 	if err != nil {
@@ -664,20 +667,32 @@ func TestDeleteStoreResolver_NotFound(t *testing.T) {
 	}
 	defer fakeDB.Close()
 
-	//ARRANGE: Expect DELETE query with 0 rows affected
-	mock.ExpectExec("DELETE FROM stores WHERE id = \\$1").
+	//ARRANGE: Mock ownership check returns no rows (store doesn't exist)
+	mock.ExpectQuery("SELECT user_id FROM stores WHERE id = \\$1").
 		WithArgs(999).
-		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
+		WillReturnError(sql.ErrNoRows)
 
-	//ARRANGE: Create Handler and GraphQL params
+	//ARRANGE: Create Handler
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	handler := &Handler{
 		database: fakeDB,
 		logger:   logger,
 	}
 
+	//ARRANGE: Create auth token
+	authService := NewAuthService(fakeDB, logger, "test-secret-key")
+	testUser := &User{ID: 1, Email: "test@example.com"}
+	token, _ := authService.generateToken(testUser)
+
+	//ARRANGE: Create HTTP request with auth
+	req := httptest.NewRequest("POST", "/graphql", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	//ARRANGE: Create context
+	ctx := context.WithValue(context.Background(), httpRequestKey, req)
 
 	params := graphql.ResolveParams{
+		Context: ctx,
 		Args: map[string]interface{}{
 			"id": 999,
 		},
