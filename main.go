@@ -39,6 +39,13 @@ import (
 
 var db *sql.DB
 
+// Custom type for context keys to avoid collisions
+type contextKey string
+
+const httpRequestKey contextKey = "httpRequest"
+
+
+
 var (
 	//httpRequestsTotal counts all HTTP requests
 	httpRequestsTotal = prometheus.NewCounterVec(
@@ -538,7 +545,7 @@ func (h *Handler) storeResolver(p graphql.ResolveParams) (interface{}, error){
 //createStoreResolver handles creating a new store (CREATE) - REQUIRES AUTH
 func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, error) {
 	// 1. Get user ID from request context (requires authentication)
-	r, ok := p.Context.Value("httpRequest").(*http.Request)
+	r, ok := p.Context.Value(httpRequestKey).(*http.Request)
 	if !ok {
 		h.logger.Error("failed to get http request from context")
 		return nil, fmt.Errorf("authentication required")
@@ -618,7 +625,7 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 //updateStoreResolver edits an existing store (UPDATE) - REQUIRES AUTH + OWNERSHIP
 func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, error) {
 	// 1. Get user ID from request context (requires authentication)
-	r, ok := p.Context.Value("httpRequest").(*http.Request)
+	r, ok := p.Context.Value(httpRequestKey).(*http.Request)
 	if !ok {
 		h.logger.Error("failed to get http request from context")
 		return nil, fmt.Errorf("authentication required")
@@ -737,7 +744,7 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 //deleteStoreResolver handles deleting a store (DELETE) - REQUIRES AUTH + OWNERSHIP
 func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, error) {
 	// 1. Get user ID from request context (requires authentication)
-	r, ok := p.Context.Value("httpRequest").(*http.Request)
+	r, ok := p.Context.Value(httpRequestKey).(*http.Request)
 	if !ok {
 		h.logger.Error("failed to get http request from context")
 		return nil, fmt.Errorf("authentication required")
@@ -1339,7 +1346,7 @@ func main() {
 	// Create a custom GraphQL handler that injects HTTP request into context
 	graphqlHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Create a new context with the HTTP request
-		ctx := context.WithValue(r.Context(), "httpRequest", r)
+		ctx := context.WithValue(r.Context(), httpRequestKey, r)
 		
 		// Create the GraphQL handler
 		h := handler.New(&handler.Config{
