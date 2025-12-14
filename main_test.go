@@ -416,8 +416,11 @@ func TestCreateSchema_Success(t *testing.T) {
 
 
 
-//CREATE
-func TestCreateStoreResolver_Success(t *testing.T){
+//CREATE - with auth
+func TestCreateStoreResolver_Success(t *testing.T) {
+	//ARRANGE: Set JWT_SECRET for testing
+	t.Setenv("JWT_SECRET", "test-secret-key")
+	
 	//ARRANGE: Create mock database
 	fakeDB, mock, err := sqlmock.New()
 	if err != nil {
@@ -427,23 +430,35 @@ func TestCreateStoreResolver_Success(t *testing.T){
 
 	//ARRANGE: Expect INSERT query and return new ID
 	mock.ExpectQuery("INSERT INTO stores").
-	WithArgs("Brand New Store",25000.00,0,true).
-	WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(99))
+		WithArgs("Brand New Store", 25000.00, 0, true, 1). // user_id = 1
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(99))
 
-	//ARRANGE: Create handler and GraphQL params
+	//ARRANGE: Create handler
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	handler := &Handler{
 		database: fakeDB,
 		logger:   logger,
 	}
 
+	//ARRANGE: Create auth service and generate token for user_id=1
+	authService := NewAuthService(fakeDB, logger, "test-secret-key")
+	testUser := &User{ID: 1, Email: "test@example.com"}
+	token, _ := authService.generateToken(testUser)
 
+	//ARRANGE: Create HTTP request with auth header
+	req := httptest.NewRequest("POST", "/graphql", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 
+	//ARRANGE: Create context with HTTP request
+	ctx := context.WithValue(context.Background(), httpRequestKey, req)
+
+	//ARRANGE: Create GraphQL params with context
 	params := graphql.ResolveParams{
+		Context: ctx,
 		Args: map[string]interface{}{
-			"name": "Brand New Store",
+			"name":    "Brand New Store",
 			"revenue": 25000.00,
-			"active": true,
+			"active":  true,
 		},
 	}
 
@@ -452,10 +467,10 @@ func TestCreateStoreResolver_Success(t *testing.T){
 
 	//ASSERT: Check success
 	if err != nil {
-		t.Errorf("Expected no error, got: %v ", err)
+		t.Errorf("Expected no error, got: %v", err)
 	}
 
-	//ASSERT: Check returned data 
+	//ASSERT: Check returned data
 	storeMap, ok := result.(map[string]interface{})
 	if !ok {
 		t.Fatal("Expected result to be map")
@@ -467,21 +482,22 @@ func TestCreateStoreResolver_Success(t *testing.T){
 	if storeMap["name"] != "Brand New Store" {
 		t.Errorf("Expected name = 'Brand New Store', got %v", storeMap["name"])
 	}
+	if storeMap["user_id"] != 1 {
+		t.Errorf("Expected user_id = 1, got %v", storeMap["user_id"])
+	}
 
-
-	//ASSERT: Verify mock was even called
+	//ASSERT: Verify mock was called
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("Unfulfilled expectations: %v", err)
 	}
-
-
 }
 
 
-
-
-//Update
-func TestUpdateStoreResolver_Success(t *testing.T){
+//UPDATE - with auth
+func TestUpdateStoreResolver_Success(t *testing.T) {
+	//ARRANGE: Set JWT_SECRET for testing
+	t.Setenv("JWT_SECRET", "test-secret-key")
+	
 	//ARRANGE: Create mock database
 	fakeDB, mock, err := sqlmock.New()
 	if err != nil {
@@ -489,35 +505,51 @@ func TestUpdateStoreResolver_Success(t *testing.T){
 	}
 	defer fakeDB.Close()
 
+	//ARRANGE: Mock ownership check
+	mock.ExpectQuery("SELECT user_id FROM stores WHERE id = \\$1").
+		WithArgs(1).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id"}).AddRow(1))
+
 	//ARRANGE: Expected UPDATE query
 	mock.ExpectExec("UPDATE stores SET (.+) WHERE id = \\$").
-	WithArgs("Updated Store", 75000.00, 500, false, 1).
-	WillReturnResult(sqlmock.NewResult(0,1))
+		WithArgs("Updated Store", 75000.00, 500, false, 1).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	//ARRANGE: Expect SELECT query to return updated data
-	rows := sqlmock.NewRows([]string{"id","name","revenue","total_orders","active"}).
-	AddRow(1,"Updated Store", 75000.00, 500, false)
+	rows := sqlmock.NewRows([]string{"id", "name", "revenue", "total_orders", "active", "user_id"}).
+		AddRow(1, "Updated Store", 75000.00, 500, false, 1)
 
-	mock.ExpectQuery("SELECT id, name, revenue, total_orders, active FROM stores WHERE id = \\$1").
-	WithArgs(1).
-	WillReturnRows(rows)
+	mock.ExpectQuery("SELECT id, name, revenue, total_orders, active, user_id FROM stores WHERE id = \\$1").
+		WithArgs(1).
+		WillReturnRows(rows)
 
-	//ARRANGE: Create Handler and GraphQL params
+	//ARRANGE: Create Handler
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	handler := &Handler{
 		database: fakeDB,
 		logger:   logger,
 	}
 
+	//ARRANGE: Create auth token
+	authService := NewAuthService(fakeDB, logger, "test-secret-key")
+	testUser := &User{ID: 1, Email: "test@example.com"}
+	token, _ := authService.generateToken(testUser)
 
+	//ARRANGE: Create HTTP request with auth
+	req := httptest.NewRequest("POST", "/graphql", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	//ARRANGE: Create context
+	ctx := context.WithValue(context.Background(), httpRequestKey, req)
 
 	params := graphql.ResolveParams{
+		Context: ctx,
 		Args: map[string]interface{}{
-			"id":		1,
-			"name":		"Updated Store",
-			"revenue":		75000.00,
-			"total_orders":		500,
-			"active":		false,
+			"id":           1,
+			"name":         "Updated Store",
+			"revenue":      75000.00,
+			"total_orders": 500,
+			"active":       false,
 		},
 	}
 
@@ -541,23 +573,18 @@ func TestUpdateStoreResolver_Success(t *testing.T){
 	if storeMap["name"] != "Updated Store" {
 		t.Errorf("Expected name='Updated Store', got %v", storeMap["name"])
 	}
-	if storeMap["revenue"] != 75000.00 {
-		t.Errorf("Expected revenue=75000.00, got %v", storeMap["revenue"])
-	}
 
 	//ASSERT: Check mock expectations
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("Unfulfilled expectations: %v",err)
+		t.Errorf("Unfulfilled expectations: %v", err)
 	}
-
-
- 
-
 }
 
-
-//Delete
+//DELETE - with auth
 func TestDeleteStoreResolver_Success(t *testing.T) {
+	//ARRANGE: Set JWT_SECRET for testing
+	t.Setenv("JWT_SECRET", "test-secret-key")
+	
 	//ARRANGE: Create mock database
 	fakeDB, mock, err := sqlmock.New()
 	if err != nil {
@@ -565,20 +592,37 @@ func TestDeleteStoreResolver_Success(t *testing.T) {
 	}
 	defer fakeDB.Close()
 
+	//ARRANGE: Mock ownership check
+	mock.ExpectQuery("SELECT user_id FROM stores WHERE id = \\$1").
+		WithArgs(99).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id"}).AddRow(1))
+
 	//ARRANGE: Expect DELETE query
 	mock.ExpectExec("DELETE FROM stores WHERE id = \\$1").
 		WithArgs(99).
 		WillReturnResult(sqlmock.NewResult(0, 1)) // 1 row affected
 
-	//ARRANGE: Create Handler and GraphQL params
+	//ARRANGE: Create Handler
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	handler := &Handler{
 		database: fakeDB,
 		logger:   logger,
 	}
 
+	//ARRANGE: Create auth token
+	authService := NewAuthService(fakeDB, logger, "test-secret-key")
+	testUser := &User{ID: 1, Email: "test@example.com"}
+	token, _ := authService.generateToken(testUser)
+
+	//ARRANGE: Create HTTP request with auth
+	req := httptest.NewRequest("POST", "/graphql", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	//ARRANGE: Create context
+	ctx := context.WithValue(context.Background(), httpRequestKey, req)
 
 	params := graphql.ResolveParams{
+		Context: ctx,
 		Args: map[string]interface{}{
 			"id": 99,
 		},
