@@ -423,7 +423,7 @@ func(h *Handler) getStoreInfo(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) storesResolver(p graphql.ResolveParams) (interface{}, error) {
 	h.logger.Info("graphql stores query - fetching all stores")
 
-	query := "SELECT id, name, revenue, total_orders, active FROM stores ORDER BY id"
+	query := "SELECT id, name, revenue, total_orders, active, user_id FROM stores ORDER BY id"
 	rows, err := h.database.Query(query)
 	if err != nil {
 		h.logger.Error("database error during stores query",
@@ -441,8 +441,9 @@ func (h *Handler) storesResolver(p graphql.ResolveParams) (interface{}, error) {
 		var revenue float64
 		var totalOrders int
 		var active bool
+		var userID sql.NullInt64 // Use sql.NullInt64 for nullable columns
 
-		err := rows.Scan(&id, &name, &revenue, &totalOrders, &active)
+		err := rows.Scan(&id, &name, &revenue, &totalOrders, &active, &userID)
 		if err != nil {
 			h.logger.Error("error scanning store row",
 				"error", err.Error(),
@@ -450,13 +451,22 @@ func (h *Handler) storesResolver(p graphql.ResolveParams) (interface{}, error) {
 			return nil, err
 		}
 
-		stores = append(stores, map[string]interface{}{
+		store := map[string]interface{}{
 			"id":           id,
 			"name":         name,
 			"revenue":      revenue,
 			"total_orders": totalOrders,
 			"active":       active,
-		})
+		}
+
+		// Add user_id if it's not null
+		if userID.Valid {
+			store["user_id"] = int(userID.Int64)
+		} else {
+			store["user_id"] = nil
+		}
+
+		stores = append(stores, store)
 	}
 
 	h.logger.Info("graphql stores query successful",
@@ -605,16 +615,51 @@ func (h *Handler) createStoreResolver(p graphql.ResolveParams) (interface{}, err
 	}, nil
 }
 
-//edits a existing store (UPDATE)
-func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, error){
-	//Extract and Validate id
+//updateStoreResolver edits an existing store (UPDATE) - REQUIRES AUTH + OWNERSHIP
+func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, error) {
+	// 1. Get user ID from request context (requires authentication)
+	r, ok := p.Context.Value("httpRequest").(*http.Request)
+	if !ok {
+		h.logger.Error("failed to get http request from context")
+		return nil, fmt.Errorf("authentication required")
+	}
+
+	userID, err := h.getUserIDFromContext(r)
+	if err != nil {
+		h.logger.Warn("unauthorized update store attempt", "error", err.Error())
+		return nil, fmt.Errorf("authentication required: %v", err)
+	}
+
+	// 2. Extract and validate id
 	id, idOk := p.Args["id"].(int)
 	if !idOk {
 		h.logger.Error("invalid id for updateStore")
 		return nil, fmt.Errorf("invalid id")
 	}
 
-	//Extract optional fields
+	// 3. Check ownership before allowing update
+	var storeUserID int
+	ownershipQuery := "SELECT user_id FROM stores WHERE id = $1"
+	err = h.database.QueryRow(ownershipQuery, id).Scan(&storeUserID)
+	if err == sql.ErrNoRows {
+		h.logger.Warn("store not found for update", "store_id", id)
+		return nil, fmt.Errorf("store with id %d not found", id)
+	}
+	if err != nil {
+		h.logger.Error("database error checking ownership", "store_id", id, "error", err.Error())
+		return nil, err
+	}
+
+	if storeUserID != userID {
+		h.logger.Warn("unauthorized update attempt - not owner",
+			"store_id", id,
+			"requesting_user", userID,
+			"store_owner", storeUserID,
+		)
+		return nil, fmt.Errorf("you can only update your own stores")
+	}
+
+	// 4. Extract optional fields
 	name, _ := p.Args["name"].(string)
 	revenue, _ := p.Args["revenue"].(float64)
 	totalOrders, _ := p.Args["total_orders"].(int)
@@ -622,10 +667,10 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 
 	h.logger.Info("updating store",
 		"store_id", id,
+		"user_id", userID,
 	)
 
-
-	//Update the database
+	// 5. Update the database
 	query := "UPDATE stores SET name = $1, revenue = $2, total_orders = $3, active = $4 WHERE id = $5"
 	result, err := h.database.Exec(query, name, revenue, totalOrders, active, id)
 
@@ -637,8 +682,6 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 		return nil, err
 	}
 
-
-	//Check if any rows were affected
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return nil, err
@@ -652,9 +695,10 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 
 	h.logger.Info("store updated successfully",
 		"store_id", id,
+		"user_id", userID,
 	)
 
-	//Invalidate cache for the updated store
+	// 6. Invalidate cache
 	if h.redis != nil {
 		cacheKey := fmt.Sprintf("store:%d", id)
 		err := h.redis.Del(context.Background(), cacheKey).Err()
@@ -663,25 +707,18 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 				"store_id", id,
 				"error", err.Error(),
 			)
-		} else {
-			h.logger.Info("cache invalidated after update",
-				"store_id", id,
-			)
 		}
 	}
 
-
-	//Fetch and return updated store
+	// 7. Fetch and return updated store
 	var storeID int
 	var storeName string
 	var storeRevenue float64
 	var storeTotalOrders int
 	var storeActive bool
 
-
-	selectQuery := "SELECT id, name, revenue, total_orders, active FROM stores WHERE id = $1"
-	err = h.database.QueryRow(selectQuery, id).Scan(&storeID, &storeName, &storeRevenue, &storeTotalOrders, &storeActive)
-
+	selectQuery := "SELECT id, name, revenue, total_orders, active, user_id FROM stores WHERE id = $1"
+	err = h.database.QueryRow(selectQuery, id).Scan(&storeID, &storeName, &storeRevenue, &storeTotalOrders, &storeActive, &storeUserID)
 
 	if err != nil {
 		return nil, err
@@ -693,28 +730,60 @@ func (h *Handler) updateStoreResolver(p graphql.ResolveParams) (interface{}, err
 		"revenue":      storeRevenue,
 		"total_orders": storeTotalOrders,
 		"active":       storeActive,
+		"user_id":      storeUserID,
 	}, nil
-
-
-
-
-
 }
 
-//deleteStoreResolver handles deleting a store (DELETE)
+//deleteStoreResolver handles deleting a store (DELETE) - REQUIRES AUTH + OWNERSHIP
 func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, error) {
-	//Extract and validate ID
+	// 1. Get user ID from request context (requires authentication)
+	r, ok := p.Context.Value("httpRequest").(*http.Request)
+	if !ok {
+		h.logger.Error("failed to get http request from context")
+		return nil, fmt.Errorf("authentication required")
+	}
+
+	userID, err := h.getUserIDFromContext(r)
+	if err != nil {
+		h.logger.Warn("unauthorized delete store attempt", "error", err.Error())
+		return nil, fmt.Errorf("authentication required: %v", err)
+	}
+
+	// 2. Extract and validate ID
 	id, idOk := p.Args["id"].(int)
 	if !idOk {
 		h.logger.Error("invalid id for deleteStore")
 		return nil, fmt.Errorf("invalid id")
 	}
 
+	// 3. Check ownership before allowing delete
+	var storeUserID int
+	ownershipQuery := "SELECT user_id FROM stores WHERE id = $1"
+	err = h.database.QueryRow(ownershipQuery, id).Scan(&storeUserID)
+	if err == sql.ErrNoRows {
+		h.logger.Warn("store not found for delete", "store_id", id)
+		return nil, fmt.Errorf("store with id %d not found", id)
+	}
+	if err != nil {
+		h.logger.Error("database error checking ownership", "store_id", id, "error", err.Error())
+		return nil, err
+	}
+
+	if storeUserID != userID {
+		h.logger.Warn("unauthorized delete attempt - not owner",
+			"store_id", id,
+			"requesting_user", userID,
+			"store_owner", storeUserID,
+		)
+		return nil, fmt.Errorf("you can only delete your own stores")
+	}
+
 	h.logger.Info("deleting store",
 		"store_id", id,
+		"user_id", userID,
 	)
 
-	//Delete from database
+	// 4. Delete from database
 	query := "DELETE FROM stores WHERE id = $1"
 	result, err := h.database.Exec(query, id)
 
@@ -726,7 +795,7 @@ func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, err
 		return nil, err
 	}
 
-	//Check if any rows were affected
+	// 5. Check if any rows were affected
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return nil, err
@@ -740,9 +809,10 @@ func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, err
 
 	h.logger.Info("store deleted successfully",
 		"store_id", id,
+		"user_id", userID,
 	)
 
-	//Invalidate cache for the deleted store
+	// 6. Invalidate cache for the deleted store
 	if h.redis != nil {
 		cacheKey := fmt.Sprintf("store:%d", id)
 		err := h.redis.Del(context.Background(), cacheKey).Err()
@@ -751,16 +821,10 @@ func (h *Handler) deleteStoreResolver(p graphql.ResolveParams) (interface{}, err
 				"store_id", id,
 				"error", err.Error(),
 			)
-		} else {
-			h.logger.Info("cache invalidated after delete",
-				"store_id", id,
-			)
 		}
 	}
 
-
-
-	//Return success response
+	// 7. Return success response
 	return map[string]interface{}{
 		"success": true,
 		"id":      id,
