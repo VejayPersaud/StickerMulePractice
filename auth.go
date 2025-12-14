@@ -150,3 +150,34 @@ func (a *AuthService) generateToken(user *User) (string, error) {
 	return signedToken, nil
 }
 
+//VerifyToken validates a JWT token and returns the user ID
+func (a *AuthService) VerifyToken(tokenString string) (int, error) {
+	//Parse the token
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		//Verify signing method
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(a.jwtSecret), nil
+	})
+
+	if err != nil {
+		a.logger.Warn("failed to parse token", "error", err.Error())
+		return 0, fmt.Errorf("invalid token")
+	}
+
+	//Extract claims
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		//Get user_id from claims
+		userID, ok := claims["user_id"].(float64) //JSON numbers are float64
+		if !ok {
+			a.logger.Error("user_id not found in token claims")
+			return 0, fmt.Errorf("invalid token claims")
+		}
+
+		return int(userID), nil
+	}
+
+	return 0, fmt.Errorf("invalid token")
+}
+
