@@ -1,3 +1,6 @@
+![Stickermule_SitePhoto1.png](assets/README_assets/Stickermule_SitePhoto1.png)
+
+
 **Live URLs:**
 - Production app frontend(LIVE WEBSITE): https://stickermule-frontend-386055911814.us-central1.run.app/stores
 - Production app backend: https://stickermule-app-386055911814.us-central1.run.app
