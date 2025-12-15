@@ -1,5 +1,5 @@
 **Live URLs:**
-- Production app frontend: https://stickermule-frontend-386055911814.us-central1.run.app/stores
+- Production app frontend(LIVE WEBSITE): https://stickermule-frontend-386055911814.us-central1.run.app/stores
 - Production app backend: https://stickermule-app-386055911814.us-central1.run.app
 - Prometheus: http://35.225.111.249:9090
 - Grafana: http://35.225.111.249:3000
