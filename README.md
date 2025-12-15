@@ -1,5 +1,7 @@
 ![Stickermule_SitePhoto1.png](assets/README_assets/Stickermule_SitePhoto1.png)
 
+![Stickermule_SitePhoto2.png](assets/README_assets/Stickermule_SitePhoto2.png)
+
 
 **Live URLs:**
 - Production app frontend(LIVE WEBSITE): https://stickermule-frontend-386055911814.us-central1.run.app/stores
@@ -121,6 +123,7 @@ mutation {
 **Production Pattern:** Single middleware automatically instruments all endpoints - scalable and maintainable.
 
 
+![GrafanaMetricsDashboard.png](assets/README_assets/GrafanaMetricsDashboard.png)
 
 ### Observability Stack 
 - Set up Prometheus and Grafana in Docker using docker-compose
@@ -138,6 +141,10 @@ mutation {
 **Production Insight:** Latency percentiles reveal distribution, /health at ~0.1ms vs /store at ~150ms (database overhead visible). p99 tracking catches worst case user experiences that averages hide.
 
 
+![GoogleCloudRun.png](assets/README_assets/GoogleCloudRun.png)
+
+![GoogleComputeEngine.png](assets/README_assets/GoogleComputeEngine.png)
+
 ### Observability Stack Extended + CI/CD 
 - Deployed app to GCP Cloud Run (serverless, auto-scaling)
 - Set up CI/CD with GitHub Actions (auto-deploy on push to main)
@@ -153,6 +160,7 @@ mutation {
 
 **Production Insight:** Latency distribution visible, /health ~0.1ms vs /store ~150ms (database overhead). p99 tracking reveals worst-case user experience. Error rate fluctuates 0-30% with traffic patterns.
 
+![JaegerTraceHistory.png](assets/README_assets/JaegerTraceHistory.png)
 
 ### Distributed Tracing 
 - Integrated OpenTelemetry SDK for trace instrumentation
