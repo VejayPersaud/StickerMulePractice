@@ -121,11 +121,7 @@ mutation {
 **Key Learning:** Middleware pattern enables instrumentation without touching business logic. Histograms reveal distribution patterns that averages hide.
 
 **Production Pattern:** Single middleware automatically instruments all endpoints - scalable and maintainable.
-
-
-
-
-
+<br><br><br><br>
 
 ![GrafanaMetricsDashboard.png](assets/README_assets/GrafanaMetricsDashboard.png)
 
@@ -143,11 +139,7 @@ mutation {
 **Key Learning:** Histograms + `histogram_quantile()` enable percentile calculations. Pull model keeps app simple, monitoring infrastructure has zero impact on app reliability.
 
 **Production Insight:** Latency percentiles reveal distribution, /health at ~0.1ms vs /store at ~150ms (database overhead visible). p99 tracking catches worst case user experiences that averages hide.
-
-
-
-
-
+<br><br><br><br>
 
 ![GoogleCloudRun.png](assets/README_assets/GoogleCloudRun.png)
 
@@ -167,11 +159,7 @@ mutation {
 **Key Learning:** Cloud Run (serverless) vs Compute Engine (VMs) - understanding when to use each. CI/CD eliminates machine-specific deployment issues. Pull based monitoring keeps app independent of observability infrastructure.
 
 **Production Insight:** Latency distribution visible, /health ~0.1ms vs /store ~150ms (database overhead). p99 tracking reveals worst-case user experience. Error rate fluctuates 0-30% with traffic patterns.
-
-
-
-
-
+<br><br><br><br>
 
 ![JaegerTraceHistory.png](assets/README_assets/JaegerTraceHistory.png)
 
