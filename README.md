@@ -1,3 +1,15 @@
+**Live URLs:**
+- Production app frontend: https://stickermule-frontend-386055911814.us-central1.run.app/stores
+- Production app backend: https://stickermule-app-386055911814.us-central1.run.app
+- Prometheus: http://35.225.111.249:9090
+- Grafana: http://35.225.111.249:3000
+- Jaeger: http://35.225.111.249:16686
+- Redis: http://35.225.111.249:6379
+- All tests passing (13/13)
+- CI/CD operational (GitHub Actions)
+- Full observability: Metrics + Logs + Traces
+
+
 ## CURRENT PROJECT STRUCTURE
 ```
 StickerMulePractice/
@@ -150,19 +162,6 @@ mutation {
 **Key Learning:** Distributed tracing reveals WHERE time is spent, not just HOW MUCH. Nested spans show parent-child relationships. Tags provide context. Foundation for performance optimization.
 
 **Production Insight:** Traces show individual request journeys through the system. Database network latency is the primary bottleneck, candidate for caching layer.
-
-
-**Live URLs:**
-- Production app: https://stickermule-app-386055911814.us-central1.run.app
-- Prometheus: http://35.225.111.249:9090
-- Grafana: http://35.225.111.249:3000
-- Jaeger: http://35.225.111.249:16686
-- Redis: http://35.225.111.249:6379
-- All tests passing (13/13)
-- CI/CD operational (GitHub Actions)
-- Full observability: Metrics + Logs + Traces
-
-
 
 ### Redis Caching
 - Deployed Redis 7 on observability VM (256MB, LRU eviction)
